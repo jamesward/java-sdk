@@ -8,8 +8,10 @@ import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
 import java.util.Map;
 
+import com.fasterxml.jackson.databind.InjectableValues;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.modelcontextprotocol.spec.McpSchema;
 import io.modelcontextprotocol.spec.McpSchema.JSONRPCRequest;
@@ -78,7 +80,12 @@ class StdioServerTransportTests {
 		transport = new StdioServerTransport(objectMapper);
 
 		// Parse expected message
-		McpSchema.JSONRPCRequest expected = objectMapper.readValue(jsonMessage, McpSchema.JSONRPCRequest.class);
+		InjectableValues injectableValues = new InjectableValues.Std().addValue("metadata", Map.of("sessionId", "123"));
+
+		McpSchema.JSONRPCRequest expected = objectMapper.setInjectableValues(injectableValues)
+			// .reader(injectableValues)
+			// .forType()
+			.readValue(jsonMessage, McpSchema.JSONRPCRequest.class);
 
 		// Connect transport with message handler and verify message
 		StepVerifier.create(transport.connect(message -> message.doOnNext(msg -> {

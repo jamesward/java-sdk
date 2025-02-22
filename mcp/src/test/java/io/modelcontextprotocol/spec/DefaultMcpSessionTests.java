@@ -46,8 +46,8 @@ class DefaultMcpSessionTests {
 	@BeforeEach
 	void setUp() {
 		transport = new MockMcpTransport();
-		session = new DefaultMcpSession(TIMEOUT, transport, Map.of(),
-				Map.of(TEST_NOTIFICATION, params -> Mono.fromRunnable(() -> logger.info("Status update: " + params))));
+		session = new DefaultMcpSession(TIMEOUT, transport, Map.of(), Map.of(TEST_NOTIFICATION,
+				notification -> Mono.fromRunnable(() -> logger.info("Status update: " + notification.params()))));
 	}
 
 	@AfterEach
@@ -77,7 +77,7 @@ class DefaultMcpSessionTests {
 		String responseData = "test response";
 
 		// Create a Mono that will emit the response after the request is sent
-		Mono<String> responseMono = session.sendRequest(TEST_METHOD, testParam, responseType);
+		Mono<String> responseMono = session.sendRequest(TEST_METHOD, testParam, responseType, null);
 		// Verify response handling
 		StepVerifier.create(responseMono).then(() -> {
 			McpSchema.JSONRPCRequest request = transport.getLastSentMessageAsRequest();
@@ -96,7 +96,7 @@ class DefaultMcpSessionTests {
 
 	@Test
 	void testSendRequestWithError() {
-		Mono<String> responseMono = session.sendRequest(TEST_METHOD, "test", responseType);
+		Mono<String> responseMono = session.sendRequest(TEST_METHOD, "test", responseType, null);
 
 		// Verify error handling
 		StepVerifier.create(responseMono).then(() -> {
@@ -111,7 +111,7 @@ class DefaultMcpSessionTests {
 
 	@Test
 	void testRequestTimeout() {
-		Mono<String> responseMono = session.sendRequest(TEST_METHOD, "test", responseType);
+		Mono<String> responseMono = session.sendRequest(TEST_METHOD, "test", responseType, null);
 
 		// Verify timeout
 		StepVerifier.create(responseMono)
@@ -122,7 +122,7 @@ class DefaultMcpSessionTests {
 	@Test
 	void testSendNotification() {
 		Map<String, Object> params = Map.of("key", "value");
-		Mono<Void> notificationMono = session.sendNotification(TEST_NOTIFICATION, params);
+		Mono<Void> notificationMono = session.sendNotification(TEST_NOTIFICATION, params, null);
 
 		// Verify notification was sent
 		StepVerifier.create(notificationMono).consumeSubscriptionWith(response -> {
@@ -138,7 +138,7 @@ class DefaultMcpSessionTests {
 	void testRequestHandling() {
 		String echoMessage = "Hello MCP!";
 		Map<String, DefaultMcpSession.RequestHandler<?>> requestHandlers = Map.of(ECHO_METHOD,
-				params -> Mono.just(params));
+				request -> Mono.just(request.params()));
 		transport = new MockMcpTransport();
 		session = new DefaultMcpSession(TIMEOUT, transport, requestHandlers, Map.of());
 
@@ -160,8 +160,8 @@ class DefaultMcpSessionTests {
 		Sinks.One<Object> receivedParams = Sinks.one();
 
 		transport = new MockMcpTransport();
-		session = new DefaultMcpSession(TIMEOUT, transport, Map.of(),
-				Map.of(TEST_NOTIFICATION, params -> Mono.fromRunnable(() -> receivedParams.tryEmitValue(params))));
+		session = new DefaultMcpSession(TIMEOUT, transport, Map.of(), Map.of(TEST_NOTIFICATION,
+				notification -> Mono.fromRunnable(() -> receivedParams.tryEmitValue(notification.params()))));
 
 		// Simulate incoming notification from the server
 		Map<String, Object> notificationParams = Map.of("status", "ready");

@@ -154,22 +154,6 @@ public class McpSyncServer {
 	}
 
 	/**
-	 * Get the client capabilities that define the supported features and functionality.
-	 * @return The client capabilities
-	 */
-	public ClientCapabilities getClientCapabilities() {
-		return this.asyncServer.getClientCapabilities();
-	}
-
-	/**
-	 * Get the client implementation information.
-	 * @return The client implementation details
-	 */
-	public McpSchema.Implementation getClientInfo() {
-		return this.asyncServer.getClientInfo();
-	}
-
-	/**
 	 * Notify clients that the list of available resources has changed.
 	 */
 	public void notifyResourcesListChanged() {
