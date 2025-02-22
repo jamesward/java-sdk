@@ -74,10 +74,10 @@ public class DefaultMcpSession implements McpSession {
 
 		/**
 		 * Handles an incoming request with the given parameters.
-		 * @param params The request parameters
+		 * @param request The request parameters
 		 * @return A Mono containing the response object
 		 */
-		Mono<T> handle(Object params);
+		Mono<T> handle(McpSchema.JSONRPCRequest request);
 
 	}
 
@@ -90,10 +90,10 @@ public class DefaultMcpSession implements McpSession {
 
 		/**
 		 * Handles an incoming notification with the given parameters.
-		 * @param params The notification parameters
+		 * @param notification The notification parameters
 		 * @return A Mono that completes when the notification is processed
 		 */
-		Mono<Void> handle(Object params);
+		Mono<Void> handle(McpSchema.JSONRPCNotification notification);
 
 	}
 
@@ -138,8 +138,10 @@ public class DefaultMcpSession implements McpSession {
 				handleIncomingRequest(request).subscribe(response -> transport.sendMessage(response).subscribe(),
 						error -> {
 							var errorResponse = new McpSchema.JSONRPCResponse(McpSchema.JSONRPC_VERSION, request.id(),
-									null, new McpSchema.JSONRPCResponse.JSONRPCError(
-											McpSchema.ErrorCodes.INTERNAL_ERROR, error.getMessage(), null));
+									null,
+									new McpSchema.JSONRPCResponse.JSONRPCError(McpSchema.ErrorCodes.INTERNAL_ERROR,
+											error.getMessage(), null),
+									request.metadata());
 							transport.sendMessage(errorResponse).subscribe();
 						});
 			}
@@ -163,15 +165,18 @@ public class DefaultMcpSession implements McpSession {
 				MethodNotFoundError error = getMethodNotFoundError(request.method());
 				return Mono.just(new McpSchema.JSONRPCResponse(McpSchema.JSONRPC_VERSION, request.id(), null,
 						new McpSchema.JSONRPCResponse.JSONRPCError(McpSchema.ErrorCodes.METHOD_NOT_FOUND,
-								error.message(), error.data())));
+								error.message(), error.data()),
+						request.metadata()));
 			}
 
-			return handler.handle(request.params())
-				.map(result -> new McpSchema.JSONRPCResponse(McpSchema.JSONRPC_VERSION, request.id(), result, null))
+			return handler.handle(request)
+				.map(result -> new McpSchema.JSONRPCResponse(McpSchema.JSONRPC_VERSION, request.id(), result, null,
+						request.metadata()))
 				.onErrorResume(error -> Mono.just(new McpSchema.JSONRPCResponse(McpSchema.JSONRPC_VERSION, request.id(),
 						null, new McpSchema.JSONRPCResponse.JSONRPCError(McpSchema.ErrorCodes.INTERNAL_ERROR,
-								error.getMessage(), null)))); // TODO: add error message
-																// through the data field
+								error.getMessage(), null),
+						request.metadata()))); // TODO: add error message
+			// through the data field
 		});
 	}
 
@@ -200,7 +205,7 @@ public class DefaultMcpSession implements McpSession {
 				logger.error("No handler registered for notification method: {}", notification.method());
 				return Mono.empty();
 			}
-			return handler.handle(notification.params());
+			return handler.handle(notification);
 		});
 	}
 
@@ -219,16 +224,18 @@ public class DefaultMcpSession implements McpSession {
 	 * @param method The method name to call
 	 * @param requestParams The request parameters
 	 * @param typeRef Type reference for response deserialization
+	 * @param metadata Metadata to send with the request
 	 * @return A Mono containing the response
 	 */
 	@Override
-	public <T> Mono<T> sendRequest(String method, Object requestParams, TypeReference<T> typeRef) {
+	public <T> Mono<T> sendRequest(String method, Object requestParams, TypeReference<T> typeRef,
+			Map<String, Object> metadata) {
 		String requestId = this.generateRequestId();
 
 		return Mono.<McpSchema.JSONRPCResponse>create(sink -> {
 			this.pendingResponses.put(requestId, sink);
 			McpSchema.JSONRPCRequest jsonrpcRequest = new McpSchema.JSONRPCRequest(McpSchema.JSONRPC_VERSION, method,
-					requestId, requestParams);
+					requestId, requestParams, metadata);
 			this.transport.sendMessage(jsonrpcRequest)
 				// TODO: It's most efficient to create a dedicated Subscriber here
 				.subscribe(v -> {
@@ -258,9 +265,9 @@ public class DefaultMcpSession implements McpSession {
 	 * @return A Mono that completes when the notification is sent
 	 */
 	@Override
-	public Mono<Void> sendNotification(String method, Map<String, Object> params) {
+	public Mono<Void> sendNotification(String method, Map<String, Object> params, Map<String, Object> metadata) {
 		McpSchema.JSONRPCNotification jsonrpcNotification = new McpSchema.JSONRPCNotification(McpSchema.JSONRPC_VERSION,
-				method, params);
+				method, params, metadata);
 		return this.transport.sendMessage(jsonrpcNotification);
 	}
 

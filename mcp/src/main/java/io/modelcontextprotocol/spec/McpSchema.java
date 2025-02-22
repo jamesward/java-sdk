@@ -8,7 +8,10 @@ import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
+import com.fasterxml.jackson.annotation.JacksonInject;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -16,7 +19,9 @@ import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import com.fasterxml.jackson.annotation.JsonTypeInfo.As;
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.InjectableValues;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.modelcontextprotocol.spec.McpSchema.AbstractJSONRPCMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -150,17 +155,24 @@ public final class McpSchema {
 
 		logger.debug("Received JSON message: {}", jsonText);
 
-		var map = objectMapper.readValue(jsonText, MAP_TYPE_REF);
+		Map<String, Object> map = objectMapper.readValue(jsonText, MAP_TYPE_REF);
+
+		JSONRPCMessage message = null;
 
 		// Determine message type based on specific JSON structure
 		if (map.containsKey("method") && map.containsKey("id")) {
-			return objectMapper.convertValue(map, JSONRPCRequest.class);
+			message = objectMapper.convertValue(map, JSONRPCRequest.class);
 		}
 		else if (map.containsKey("method") && !map.containsKey("id")) {
-			return objectMapper.convertValue(map, JSONRPCNotification.class);
+			message = objectMapper.convertValue(map, JSONRPCNotification.class);
 		}
 		else if (map.containsKey("result") || map.containsKey("error")) {
-			return objectMapper.convertValue(map, JSONRPCResponse.class);
+			message = objectMapper.convertValue(map, JSONRPCResponse.class);
+		}
+
+		if (message != null) {
+			message.setMetadata(Map.of("foo", "bar"));
+			return message;
 		}
 
 		throw new IllegalArgumentException("Cannot deserialize JSONRPCMessage: " + jsonText);
@@ -169,41 +181,381 @@ public final class McpSchema {
 	// ---------------------------
 	// JSON-RPC Message Types
 	// ---------------------------
-	public sealed interface JSONRPCMessage permits JSONRPCRequest, JSONRPCNotification, JSONRPCResponse {
+	public interface JSONRPCMessage {
 
 		String jsonrpc();
+
+		@JsonIgnore
+		Map<String, Object> metadata();
+
+		void setMetadata(Map<String, Object> metadata);
+
+	}
+
+	public static class AbstractJSONRPCMessage implements JSONRPCMessage {
+
+		@JsonProperty("jsonrpc")
+		String jsonrpc;
+
+		@JsonProperty("metadata")
+		Map<String, Object> metadata;
+
+		@Override
+		public String jsonrpc() {
+			return jsonrpc;
+		}
+
+		@Override
+		public Map<String, Object> metadata() {
+			return metadata;
+		}
+
+		public String getJsonrpc() {
+			return jsonrpc;
+		}
+
+		public Map<String, Object> getMetadata() {
+			return metadata;
+		}
+
+		public void setJsonrpc(String jsonrpc) {
+			this.jsonrpc = jsonrpc;
+		}
+
+		public void setMetadata(Map<String, Object> metadata) {
+			this.metadata = metadata;
+		}
+
+		@Override
+		public int hashCode() {
+			return Objects.hash(this.jsonrpc, this.metadata);
+		}
+
+		@Override
+		public boolean equals(Object obj) {
+			if (this == obj) {
+				return true;
+			}
+			if (obj == null || getClass() != obj.getClass()) {
+				return false;
+			}
+			AbstractJSONRPCMessage other = (AbstractJSONRPCMessage) obj;
+			return Objects.equals(this.jsonrpc, other.jsonrpc) && Objects.equals(this.metadata, other.metadata);
+		}
 
 	}
 
 	@JsonInclude(JsonInclude.Include.NON_ABSENT)
-	public record JSONRPCRequest( // @formatter:off
-			@JsonProperty("jsonrpc") String jsonrpc,
-			@JsonProperty("method") String method,
-			@JsonProperty("id") Object id,
-			@JsonProperty("params") Object params) implements JSONRPCMessage {
-	} // @formatter:on
+	public static final class JSONRPCRequest extends AbstractJSONRPCMessage {
+
+		//@formatter:off
+		@JsonProperty("method") String method;
+
+		@JsonProperty("id") Object id;
+
+		@JsonProperty("params") Object params;
+		//@formatter:on
+
+		public JSONRPCRequest() {
+		}
+
+		public JSONRPCRequest(String jsonrpc, String method, Object id, Object params, Map<String, Object> metadata) {
+			this.jsonrpc = jsonrpc;
+			this.method = method;
+			this.id = id;
+			this.params = params;
+			this.metadata = metadata;
+		}
+
+		public JSONRPCRequest(String jsonrpc, String method, Object id, Object params) {
+			this(jsonrpc, method, id, params, null);
+		}
+
+		public String getMethod() {
+			return method;
+		}
+
+		public String method() {
+			return method;
+		}
+
+		public Object getId() {
+			return id;
+		}
+
+		public Object id() {
+			return id;
+		}
+
+		public Object getParams() {
+			return params;
+		}
+
+		public Object params() {
+			return params;
+		}
+
+		public void setMethod(String method) {
+			this.method = method;
+		}
+
+		public void setId(Object id) {
+			this.id = id;
+		}
+
+		public void setParams(Object params) {
+			this.params = params;
+		}
+
+		@Override
+		public int hashCode() {
+			return Objects.hash(super.hashCode(), this.method, this.id, this.params);
+		}
+
+		@Override
+		public boolean equals(Object obj) {
+			if (this == obj) {
+				return true;
+			}
+			if (obj == null || getClass() != obj.getClass()) {
+				return false;
+			}
+			if (!super.equals(obj)) {
+				return false;
+			}
+			JSONRPCRequest other = (JSONRPCRequest) obj;
+
+			return super.equals(obj) && Objects.equals(this.method, other.method) && Objects.equals(this.id, other.id)
+					&& Objects.equals(this.params, other.params);
+		}
+
+		@Override
+		public String toString() {
+			return "JSONRPCRequest [ method=" + method + ", id=" + id + ", params=" + params + ", metadata=" + metadata
+					+ "]";
+		}
+
+	}
 
 	@JsonInclude(JsonInclude.Include.NON_ABSENT)
-	public record JSONRPCNotification( // @formatter:off
-			@JsonProperty("jsonrpc") String jsonrpc,
-			@JsonProperty("method") String method,
-			@JsonProperty("params") Map<String, Object> params) implements JSONRPCMessage {
-	} // @formatter:on
+	public static class JSONRPCNotification extends AbstractJSONRPCMessage {
+
+		//@formatter:off
+		private @JsonProperty("method") String method;
+
+		private @JsonProperty("params") Map<String, Object> params;
+		//@formatter:on
+
+		public JSONRPCNotification() {
+		}
+
+		public JSONRPCNotification(String jsonrpc, String method, Map<String, Object> params,
+				Map<String, Object> metadata) {
+			this.jsonrpc = jsonrpc;
+			this.method = method;
+			this.params = params;
+			this.metadata = metadata;
+		}
+
+		public JSONRPCNotification(String jsonrpc, String method, Map<String, Object> params) {
+			this(jsonrpc, method, params, null);
+		}
+
+		public String getMethod() {
+			return method;
+		}
+
+		public String method() {
+			return method;
+		}
+
+		public Map<String, Object> getParams() {
+			return params;
+		}
+
+		public Map<String, Object> params() {
+			return params;
+		}
+
+		public void setMethod(String method) {
+			this.method = method;
+		}
+
+		public void setParams(Map<String, Object> params) {
+			this.params = params;
+		}
+
+		@Override
+		public int hashCode() {
+			return Objects.hash(super.hashCode(), this.method, this.params);
+		}
+
+		@Override
+		public boolean equals(Object obj) {
+			if (this == obj) {
+				return true;
+			}
+			if (obj == null || getClass() != obj.getClass()) {
+				return false;
+			}
+			if (!super.equals(obj)) {
+				return false;
+			}
+			JSONRPCNotification other = (JSONRPCNotification) obj;
+
+			return super.equals(obj) && Objects.equals(this.method, other.method)
+					&& Objects.equals(this.params, other.params);
+		}
+
+		@Override
+		public String toString() {
+			return "JSONRPCNotification [ method=" + method + ", params=" + params + ", metadata=" + metadata + "]";
+		}
+
+	}
 
 	@JsonInclude(JsonInclude.Include.NON_ABSENT)
-	public record JSONRPCResponse( // @formatter:off
-			@JsonProperty("jsonrpc") String jsonrpc,
-			@JsonProperty("id") Object id,
-			@JsonProperty("result") Object result,
-			@JsonProperty("error") JSONRPCError error) implements JSONRPCMessage {
+	public static class JSONRPCResponse extends AbstractJSONRPCMessage {
+
+		//@formatter:off
+		private @JsonProperty("id") Object id;
+
+		private @JsonProperty("result") Object result;
+
+		private @JsonProperty("error") JSONRPCError error;
+		//@formatter:on
+
+		public JSONRPCResponse() {
+		}
+
+		public JSONRPCResponse(String jsonrpc, Object id, Object result, JSONRPCError error,
+				Map<String, Object> metadata) {
+			this.jsonrpc = jsonrpc;
+			this.id = id;
+			this.result = result;
+			this.error = error;
+			this.metadata = metadata;
+		}
+
+		public JSONRPCResponse(String jsonrpc, Object id, Object result, JSONRPCError error) {
+			this(jsonrpc, id, result, error, null);
+		}
+
+		public Object getId() {
+			return id;
+		}
+
+		public Object id() {
+			return id;
+		}
+
+		public Object getResult() {
+			return result;
+		}
+
+		public Object result() {
+			return result;
+		}
+
+		public JSONRPCError getError() {
+			return error;
+		}
+
+		public JSONRPCError error() {
+			return error;
+		}
+
+		public void setId(Object id) {
+			this.id = id;
+		}
+
+		public void setResult(Object result) {
+			this.result = result;
+		}
+
+		public void setError(JSONRPCError error) {
+			this.error = error;
+		}
+
+		@Override
+		public int hashCode() {
+			return Objects.hash(super.hashCode(), this.id, this.result, this.error);
+		}
+
+		@Override
+		public boolean equals(Object obj) {
+			if (this == obj) {
+				return true;
+			}
+			if (obj == null || getClass() != obj.getClass()) {
+				return false;
+			}
+			if (!super.equals(obj)) {
+				return false;
+			}
+			JSONRPCResponse other = (JSONRPCResponse) obj;
+
+			return super.equals(obj) && Objects.equals(this.id, other.id) && Objects.equals(this.result, other.result)
+					&& Objects.equals(this.error, other.error);
+		}
+
+		@Override
+		public String toString() {
+			return "JSONRPCResponse [ id=" + id + ", result=" + result + ", error=" + error + ", metadata=" + metadata
+					+ "]";
+		}
 
 		@JsonInclude(JsonInclude.Include.NON_ABSENT)
-		public record JSONRPCError(
-			@JsonProperty("code") int code,
-			@JsonProperty("message") String message,
-			@JsonProperty("data") Object data) {
+		public record JSONRPCError(@JsonProperty("code") int code, @JsonProperty("message") String message,
+				@JsonProperty("data") Object data) {
 		}
-	}// @formatter:on
+
+	}
+
+	// @JsonInclude(JsonInclude.Include.NON_ABSENT)
+	// public record JSONRPCRequest( // @formatter:off
+	// 		@JsonProperty("jsonrpc") String jsonrpc,
+	// 		@JsonProperty("method") String method,
+	// 		@JsonProperty("id") Object id,
+	// 		@JsonProperty("params") Object params,
+	// 		@JacksonInject Map<String, Object> metadata) implements JSONRPCMessage {
+		
+	// 	public JSONRPCRequest(String jsonrpc, String method, Object id, Object params) {
+	// 		this(jsonrpc, method, id, params, null);
+	// 	}
+	// } // @formatter:on
+
+	// @JsonInclude(JsonInclude.Include.NON_ABSENT)
+	// public record JSONRPCNotification( // @formatter:off
+	// 		@JsonProperty("jsonrpc") String jsonrpc,
+	// 		@JsonProperty("method") String method,
+	// 		@JsonProperty("params") Map<String, Object> params,
+	// 		@JacksonInject Map<String, Object> metadata) implements JSONRPCMessage {
+		
+	// 	public JSONRPCNotification(String jsonrpc, String method, Map<String, Object> params) {
+	// 		this(jsonrpc, method, params, null);
+	// 	}
+	// } // @formatter:on
+
+	// @JsonInclude(JsonInclude.Include.NON_ABSENT)
+	// public record JSONRPCResponse( // @formatter:off
+	// 		@JsonProperty("jsonrpc") String jsonrpc,
+	// 		@JsonProperty("id") Object id,
+	// 		@JsonProperty("result") Object result,
+	// 		@JsonProperty("error") JSONRPCError error,
+	// 		@JacksonInject Map<String, Object> metadata) implements JSONRPCMessage {
+
+	// 	public JSONRPCResponse(String jsonrpc, Object id, Object result, JSONRPCError error) {
+	// 		this(jsonrpc, id, result, error, null);
+	// 	}
+
+	// 	@JsonInclude(JsonInclude.Include.NON_ABSENT)
+	// 	public record JSONRPCError(
+	// 		@JsonProperty("code") int code,
+	// 		@JsonProperty("message") String message,
+	// 		@JsonProperty("data") Object data) {
+	// 	}
+	// }// @formatter:on
 
 	// ---------------------------
 	// Initialization

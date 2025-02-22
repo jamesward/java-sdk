@@ -258,7 +258,7 @@ public class McpAsyncClient {
 
 		Mono<McpSchema.InitializeResult> result = this.mcpSession.sendRequest(McpSchema.METHOD_INITIALIZE,
 				initializeRequest, new TypeReference<McpSchema.InitializeResult>() {
-				});
+				}, null);
 
 		return result.flatMap(initializeResult -> {
 
@@ -274,7 +274,7 @@ public class McpAsyncClient {
 						"Unsupported protocol version from the server: " + initializeResult.protocolVersion()));
 			}
 			else {
-				return this.mcpSession.sendNotification(McpSchema.METHOD_NOTIFICATION_INITIALIZED, null)
+				return this.mcpSession.sendNotification(McpSchema.METHOD_NOTIFICATION_INITIALIZED, null, null)
 					.thenReturn(initializeResult);
 			}
 		});
@@ -345,7 +345,7 @@ public class McpAsyncClient {
 	 */
 	public Mono<Object> ping() {
 		return this.mcpSession.sendRequest(McpSchema.METHOD_PING, null, new TypeReference<Object>() {
-		});
+		}, null);
 	}
 
 	// --------------------------
@@ -413,13 +413,13 @@ public class McpAsyncClient {
 	 * @return A Mono that completes when the notification is sent
 	 */
 	public Mono<Void> rootsListChangedNotification() {
-		return this.mcpSession.sendNotification(McpSchema.METHOD_NOTIFICATION_ROOTS_LIST_CHANGED);
+		return this.mcpSession.sendNotification(McpSchema.METHOD_NOTIFICATION_ROOTS_LIST_CHANGED, null, null);
 	}
 
 	private RequestHandler<McpSchema.ListRootsResult> rootsListRequestHandler() {
-		return params -> {
+		return rpcRequest -> {
 			@SuppressWarnings("unused")
-			McpSchema.PaginatedRequest request = transport.unmarshalFrom(params,
+			McpSchema.PaginatedRequest request = transport.unmarshalFrom(rpcRequest.params(),
 					new TypeReference<McpSchema.PaginatedRequest>() {
 					});
 
@@ -433,8 +433,8 @@ public class McpAsyncClient {
 	// Sampling
 	// --------------------------
 	private RequestHandler<CreateMessageResult> samplingCreateMessageHandler() {
-		return params -> {
-			McpSchema.CreateMessageRequest request = transport.unmarshalFrom(params,
+		return rpcRequest -> {
+			McpSchema.CreateMessageRequest request = transport.unmarshalFrom(rpcRequest.params(),
 					new TypeReference<McpSchema.CreateMessageRequest>() {
 					});
 
@@ -516,7 +516,7 @@ public class McpAsyncClient {
 	private NotificationHandler asyncToolsChangeNotificationHandler(
 			List<Function<List<McpSchema.Tool>, Mono<Void>>> toolsChangeConsumers) {
 		// TODO: params are not used yet
-		return params -> listTools().flatMap(listToolsResult -> Flux.fromIterable(toolsChangeConsumers)
+		return notification -> listTools().flatMap(listToolsResult -> Flux.fromIterable(toolsChangeConsumers)
 			.flatMap(consumer -> consumer.apply(listToolsResult.tools()))
 			.onErrorResume(error -> {
 				logger.error("Error handling tools list change notification", error);
@@ -644,13 +644,14 @@ public class McpAsyncClient {
 
 	private NotificationHandler asyncResourcesChangeNotificationHandler(
 			List<Function<List<McpSchema.Resource>, Mono<Void>>> resourcesChangeConsumers) {
-		return params -> listResources().flatMap(listResourcesResult -> Flux.fromIterable(resourcesChangeConsumers)
-			.flatMap(consumer -> consumer.apply(listResourcesResult.resources()))
-			.onErrorResume(error -> {
-				logger.error("Error handling resources list change notification", error);
-				return Mono.empty();
-			})
-			.then());
+		return notification -> listResources()
+			.flatMap(listResourcesResult -> Flux.fromIterable(resourcesChangeConsumers)
+				.flatMap(consumer -> consumer.apply(listResourcesResult.resources()))
+				.onErrorResume(error -> {
+					logger.error("Error handling resources list change notification", error);
+					return Mono.empty();
+				})
+				.then());
 	}
 
 	// --------------------------
@@ -691,7 +692,7 @@ public class McpAsyncClient {
 
 	private NotificationHandler asyncPromptsChangeNotificationHandler(
 			List<Function<List<McpSchema.Prompt>, Mono<Void>>> promptsChangeConsumers) {
-		return params -> listPrompts().flatMap(listPromptsResult -> Flux.fromIterable(promptsChangeConsumers)
+		return notification -> listPrompts().flatMap(listPromptsResult -> Flux.fromIterable(promptsChangeConsumers)
 			.flatMap(consumer -> consumer.apply(listPromptsResult.prompts()))
 			.onErrorResume(error -> {
 				logger.error("Error handling prompts list change notification", error);
@@ -714,10 +715,10 @@ public class McpAsyncClient {
 	private NotificationHandler asyncLoggingNotificationHandler(
 			List<Function<LoggingMessageNotification, Mono<Void>>> loggingConsumers) {
 
-		return params -> {
-			McpSchema.LoggingMessageNotification loggingMessageNotification = transport.unmarshalFrom(params,
-					new TypeReference<McpSchema.LoggingMessageNotification>() {
-					});
+		return notification -> {
+			McpSchema.LoggingMessageNotification loggingMessageNotification = transport
+				.unmarshalFrom(notification.params(), new TypeReference<McpSchema.LoggingMessageNotification>() {
+				});
 
 			return Flux.fromIterable(loggingConsumers)
 				.flatMap(consumer -> consumer.apply(loggingMessageNotification))
@@ -737,7 +738,7 @@ public class McpAsyncClient {
 
 		Map<String, Object> params = Map.of("level", levelName);
 
-		return this.mcpSession.sendNotification(McpSchema.METHOD_LOGGING_SET_LEVEL, params);
+		return this.mcpSession.sendNotification(McpSchema.METHOD_LOGGING_SET_LEVEL, params, null);
 	}
 
 	/**

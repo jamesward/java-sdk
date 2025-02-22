@@ -36,9 +36,15 @@ public interface McpSession {
 	 * @param method the name of the method to be called on the server
 	 * @param requestParams the parameters to be sent with the request
 	 * @param typeRef the TypeReference describing the expected response type
+	 * @param metadata a map of metadata to be sent with the request
 	 * @return a Mono that will emit the response when received
 	 */
-	<T> Mono<T> sendRequest(String method, Object requestParams, TypeReference<T> typeRef);
+	<T> Mono<T> sendRequest(String method, Object requestParams, TypeReference<T> typeRef,
+			Map<String, Object> metadata);
+
+	default <T> Mono<T> sendRequest(String method, Object requestParams, TypeReference<T> typeRef) {
+		return sendRequest(method, requestParams, typeRef, null);
+	}
 
 	/**
 	 * Sends a notification to the model server without parameters.
@@ -48,11 +54,12 @@ public interface McpSession {
 	 * the server. It's useful for fire-and-forget scenarios.
 	 * </p>
 	 * @param method the name of the notification method to be called on the server
+	 * @param metadata a map of metadata to be sent with the notification
 	 * @return a Mono that completes when the notification has been sent
 	 */
-	default Mono<Void> sendNotification(String method) {
-		return sendNotification(method, null);
-	}
+	// default Mono<Void> sendNotification(String method) {
+	// return sendNotification(method, null, metadata);
+	// }
 
 	/**
 	 * Sends a notification to the model server with parameters.
@@ -63,9 +70,10 @@ public interface McpSession {
 	 * </p>
 	 * @param method the name of the notification method to be called on the server
 	 * @param params a map of parameters to be sent with the notification
+	 * @param metadata a map of metadata to be sent with the notification
 	 * @return a Mono that completes when the notification has been sent
 	 */
-	Mono<Void> sendNotification(String method, Map<String, Object> params);
+	Mono<Void> sendNotification(String method, Map<String, Object> params, Map<String, Object> metadata);
 
 	/**
 	 * Closes the session and releases any associated resources asynchronously.

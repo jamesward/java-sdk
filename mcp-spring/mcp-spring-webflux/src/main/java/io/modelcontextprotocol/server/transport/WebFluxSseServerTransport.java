@@ -3,6 +3,8 @@ package io.modelcontextprotocol.server.transport;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
@@ -186,9 +188,15 @@ public class WebFluxSseServerTransport implements ServerMcpTransport {
 					.data(jsonText)
 					.build();
 
+				String sessionId =  (message.metadata() != null && message.metadata().containsKey("sessionId"))?
+					(String) message.metadata().get("sessionId") : null;
+
+				List<String> sessionIds = (sessionId != null) ? List.of(sessionId) : sessions.keySet().stream().toList();
+
 				logger.debug("Attempting to broadcast message to {} active sessions", sessions.size());
 
-				List<String> failedSessions = sessions.values().stream()
+				List<String> failedSessions = sessionIds.stream()
+					.map(id -> sessions.get(id))
 					.filter(session -> session.messageSink.tryEmitNext(event).isFailure())
 					.map(session -> session.id)
 					.toList();
@@ -301,7 +309,11 @@ public class WebFluxSseServerTransport implements ServerMcpTransport {
 			.body(Flux.<ServerSentEvent<?>>create(sink -> {
 				// Send initial endpoint event
 				logger.debug("Sending initial endpoint event to session: {}", sessionId);
-				sink.next(ServerSentEvent.builder().event(ENDPOINT_EVENT_TYPE).data(messageEndpoint).build());
+
+				sink.next(ServerSentEvent.builder()
+					.event(ENDPOINT_EVENT_TYPE)
+					.data(String.format("%s?sessionId=%s", messageEndpoint, sessionId))
+					.build());
 
 				// Subscribe to session messages
 				session.messageSink.asFlux()
@@ -352,7 +364,11 @@ public class WebFluxSseServerTransport implements ServerMcpTransport {
 
 		return request.bodyToMono(String.class).flatMap(body -> {
 			try {
+
 				McpSchema.JSONRPCMessage message = McpSchema.deserializeJsonRpcMessage(objectMapper, body);
+				request.queryParam("sessionId")
+					.ifPresent(sessionId -> message.setMetadata(Map.of("sessionId", sessionId)));
+
 				return Mono.just(message)
 					.transform(this.connectHandler)
 					.flatMap(response -> ServerResponse.ok().build())
