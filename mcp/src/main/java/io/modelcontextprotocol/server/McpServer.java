@@ -535,7 +535,7 @@ public interface McpServer {
 		 * Each tool is uniquely identified by a name and includes metadata describing its
 		 * schema.
 		 */
-		private final List<McpServerFeatures.SyncToolRegistration> tools = new ArrayList<>();
+		private final List<McpServerFeatures.SyncToolRegistrationInterface<?>> tools = new ArrayList<>();
 
 		/**
 		 * The Model Context Protocol (MCP) provides a standardized way for servers to
@@ -677,8 +677,8 @@ public interface McpServer {
 		 * @throws IllegalArgumentException if toolRegistrations is null
 		 * @see #tools(List)
 		 */
-		public SyncSpec tools(McpServerFeatures.SyncToolRegistration... toolRegistrations) {
-			for (McpServerFeatures.SyncToolRegistration tool : toolRegistrations) {
+		public SyncSpec tools(McpServerFeatures.SyncToolRegistrationInterface<?>... toolRegistrations) {
+			for (McpServerFeatures.SyncToolRegistrationInterface<?> tool : toolRegistrations) {
 				this.tools.add(tool);
 			}
 			return this;

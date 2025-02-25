@@ -12,20 +12,19 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Function;
-import java.util.stream.Stream;
 
 import com.fasterxml.jackson.core.type.TypeReference;
+import io.modelcontextprotocol.server.McpServerFeatures.AsyncClientCallback;
+import io.modelcontextprotocol.server.McpServerFeatures.AsyncToolRegistrationInterface;
 import io.modelcontextprotocol.spec.DefaultMcpSession;
+import io.modelcontextprotocol.spec.DefaultMcpSession.NotificationHandler;
 import io.modelcontextprotocol.spec.McpError;
 import io.modelcontextprotocol.spec.McpSchema;
-import io.modelcontextprotocol.spec.ServerMcpTransport;
-import io.modelcontextprotocol.spec.DefaultMcpSession.NotificationHandler;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
-import io.modelcontextprotocol.spec.McpSchema.ClientCapabilities;
 import io.modelcontextprotocol.spec.McpSchema.LoggingLevel;
 import io.modelcontextprotocol.spec.McpSchema.LoggingMessageNotification;
 import io.modelcontextprotocol.spec.McpSchema.Tool;
-import io.modelcontextprotocol.util.Assert;
+import io.modelcontextprotocol.spec.ServerMcpTransport;
 import io.modelcontextprotocol.util.Utils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -94,7 +93,7 @@ public class McpAsyncServer {
 	/**
 	 * Thread-safe list of tool handlers that can be modified at runtime.
 	 */
-	private final CopyOnWriteArrayList<McpServerFeatures.AsyncToolRegistration> tools = new CopyOnWriteArrayList<>();
+	private final CopyOnWriteArrayList<McpServerFeatures.AsyncToolRegistrationInterface<?>> tools = new CopyOnWriteArrayList<>();
 
 	private final CopyOnWriteArrayList<McpSchema.ResourceTemplate> resourceTemplates = new CopyOnWriteArrayList<>();
 
@@ -108,6 +107,8 @@ public class McpAsyncServer {
 	 * Supported protocol versions.
 	 */
 	private List<String> protocolVersions = List.of(McpSchema.LATEST_PROTOCOL_VERSION);
+
+	private Map<String, ClientSession> clientSessions = new ConcurrentHashMap<>();
 
 	/**
 	 * Create a new McpAsyncServer with the given transport and capabilities.
@@ -173,49 +174,6 @@ public class McpAsyncServer {
 		this.mcpSession = new DefaultMcpSession(Duration.ofSeconds(10), mcpTransport, requestHandlers,
 				notificationHandlers);
 	}
-
-	private static class ClientSession {
-
-		private final String sessionId;
-
-		private final ClientCapabilities clientCapabilities;
-
-		private final McpSchema.Implementation clientInfo;
-
-		private boolean initialized;
-
-		private ClientSession(String sessionId, ClientCapabilities clientCapabilities,
-				McpSchema.Implementation clientInfo) {
-
-			Assert.hasText(sessionId, "Session ID must not be empty");
-			Assert.notNull(clientInfo, "Client info must not be null");
-			Assert.notNull(clientCapabilities, "Client capabilities must not be null");
-
-			this.sessionId = sessionId;
-			this.clientCapabilities = clientCapabilities;
-			this.clientInfo = clientInfo;
-			this.initialized = false;
-		}
-
-		public ClientCapabilities getClientCapabilities() {
-			return this.clientCapabilities;
-		}
-
-		public McpSchema.Implementation getClientInfo() {
-			return this.clientInfo;
-		}
-
-		public boolean isInitialized() {
-			return this.initialized;
-		}
-
-		public void setInitialized(boolean initialized) {
-			this.initialized = initialized;
-		}
-
-	}
-
-	private Map<String, ClientSession> clientSessions = new ConcurrentHashMap<>();
 
 	private String sessionId(McpSchema.JSONRPCMessage message) {
 		return (message.metadata() != null && message.metadata().containsKey("sessionId"))
@@ -328,13 +286,20 @@ public class McpAsyncServer {
 
 	private NotificationHandler asyncRootsListChangedNotificationHandler(
 			List<Function<List<McpSchema.Root>, Mono<Void>>> rootsChangeConsumers) {
-		return notification -> listRoots().flatMap(listRootsResult -> Flux.fromIterable(rootsChangeConsumers)
-			.flatMap(consumer -> consumer.apply(listRootsResult.roots()))
-			.onErrorResume(error -> {
-				logger.error("Error handling roots list change notification", error);
-				return Mono.empty();
-			})
-			.then());
+
+		return notification -> listRoots(null, sessionId(notification))
+			.flatMap(listRootsResult -> Flux.fromIterable(rootsChangeConsumers)
+				.flatMap(consumer -> consumer.apply(listRootsResult.roots()))
+				.onErrorResume(error -> {
+					logger.error("Error handling roots list change notification", error);
+					return Mono.empty();
+				})
+				.then());
+	}
+
+	private Mono<McpSchema.ListRootsResult> listRoots(String cursor, String clientSessionId) {
+		return this.mcpSession.sendRequest(McpSchema.METHOD_ROOTS_LIST, new McpSchema.PaginatedRequest(cursor),
+				LIST_ROOTS_RESULT_TYPE_REF, Map.of("sessionId", clientSessionId));
 	}
 
 	// ---------------------------------------
@@ -346,7 +311,7 @@ public class McpAsyncServer {
 	 * @param toolRegistration The tool registration to add
 	 * @return Mono that completes when clients have been notified of the change
 	 */
-	public Mono<Void> addTool(McpServerFeatures.AsyncToolRegistration toolRegistration) {
+	public Mono<Void> addTool(McpServerFeatures.AsyncToolRegistrationInterface<?> toolRegistration) {
 		if (toolRegistration == null) {
 			return Mono.error(new McpError("Tool registration must not be null"));
 		}
@@ -424,7 +389,7 @@ public class McpAsyncServer {
 
 	private DefaultMcpSession.RequestHandler<McpSchema.ListToolsResult> toolsListRequestHandler() {
 		return request -> {
-			List<Tool> tools = this.tools.stream().map(McpServerFeatures.AsyncToolRegistration::tool).toList();
+			List<Tool> tools = this.tools.stream().map(McpServerFeatures.AsyncToolRegistrationInterface::tool).toList();
 
 			return Mono.just(new McpSchema.ListToolsResult(tools, null));
 		};
@@ -432,11 +397,12 @@ public class McpAsyncServer {
 
 	private DefaultMcpSession.RequestHandler<CallToolResult> toolsCallRequestHandler() {
 		return request -> {
+
 			McpSchema.CallToolRequest callToolRequest = transport.unmarshalFrom(request.params(),
 					new TypeReference<McpSchema.CallToolRequest>() {
 					});
 
-			Optional<McpServerFeatures.AsyncToolRegistration> toolRegistration = this.tools.stream()
+			Optional<McpServerFeatures.AsyncToolRegistrationInterface<?>> toolRegistration = this.tools.stream()
 				.filter(tr -> callToolRequest.name().equals(tr.tool().name()))
 				.findAny();
 
@@ -444,8 +410,25 @@ public class McpAsyncServer {
 				return Mono.error(new McpError("Tool not found: " + callToolRequest.name()));
 			}
 
-			return toolRegistration.map(tool -> tool.call().apply(callToolRequest.arguments()))
-				.orElse(Mono.error(new McpError("Tool not found: " + callToolRequest.name())));
+			if (!toolRegistration.isPresent()) {
+				return Mono.error(new McpError("Tool not found: " + callToolRequest.name()));
+			}
+			
+			if (toolRegistration.get() instanceof McpServerFeatures.AsyncToolRegistration tool) {				
+				return tool.call().apply(callToolRequest.arguments());
+			} else if (toolRegistration.get() instanceof McpServerFeatures.AsyncToolRegistration2 tool) {
+				var clientSessionId = sessionId(request);				
+				if (clientSessionId == null) {
+					return Mono.error(new McpError("Session ID missing in the request:" + request));
+				}
+				ClientSession clientSession = this.clientSessions.get(clientSessionId);
+				if (clientSession == null) {
+					return Mono.error(new McpError("Client session not found for session ID: " + clientSessionId));
+				}
+				return tool.call().apply(new AsyncClientCallback(new McpAsyncClientCallback(this.mcpSession, clientSession), tool.call()));
+			} else {
+				return Mono.error(new McpError("Tool not found: " + callToolRequest.name()));
+			}
 		};
 	}
 
@@ -748,16 +731,25 @@ public class McpAsyncServer {
 	 */
 	public Mono<McpSchema.CreateMessageResult> createMessage(McpSchema.CreateMessageRequest createMessageRequest) {
 
-		// if (this.clientCapabilities == null) {
-		// return Mono.error(new McpError("Client must be initialized. Call the
-		// initialize method first!"));
-		// }
-		// if (this.clientCapabilities.sampling() == null) {
-		// return Mono.error(new McpError("Client must be configured with sampling
-		// capabilities"));
-		// }
+		String sessionId = (createMessageRequest.metadata() != null)
+				? (String) createMessageRequest.metadata().get("sessionId") : null;
+
+		if (sessionId == null) {
+			return Mono.error(new McpError("Session ID must be provided in the metadata"));
+		}
+		var clientSession = this.clientSessions.get(sessionId);
+		if (clientSession == null) {
+			return Mono.error(new McpError("Client session not found for session ID: " + sessionId));
+		}
+		if (clientSession.isInitialized() == false) {
+			return Mono.error(new McpError("Client session not initialized for session ID: " + sessionId));
+		}
+		if (clientSession.getClientCapabilities().sampling() == null) {
+			return Mono.error(new McpError("Client must be configured with sampling capabilities"));
+		}
+
 		return this.mcpSession.sendRequest(McpSchema.METHOD_SAMPLING_CREATE_MESSAGE, createMessageRequest,
-				CREATE_MESSAGE_RESULT_TYPE_REF);
+				CREATE_MESSAGE_RESULT_TYPE_REF, Map.of("sessionId", sessionId));
 	}
 
 	/**

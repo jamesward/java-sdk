@@ -55,8 +55,8 @@ public class DefaultMcpSession implements McpSession {
 	/** Map of notification handlers keyed by method name */
 	private final ConcurrentHashMap<String, NotificationHandler> notificationHandlers = new ConcurrentHashMap<>();
 
-	/** Session-specific prefix for request IDs */
-	private final String sessionPrefix = UUID.randomUUID().toString().substring(0, 8);
+	/** Request-specific prefix for request IDs */
+	private final String requestIdPrefix = UUID.randomUUID().toString().substring(0, 8);
 
 	/** Atomic counter for generating unique request IDs */
 	private final AtomicLong requestCounter = new AtomicLong(0);
@@ -215,7 +215,7 @@ public class DefaultMcpSession implements McpSession {
 	 * @return A unique request ID string
 	 */
 	private String generateRequestId() {
-		return this.sessionPrefix + "-" + this.requestCounter.getAndIncrement();
+		return this.requestIdPrefix + "-" + this.requestCounter.getAndIncrement();
 	}
 
 	/**

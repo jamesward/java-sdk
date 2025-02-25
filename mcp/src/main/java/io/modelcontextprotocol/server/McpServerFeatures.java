@@ -12,13 +12,15 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 
 import io.modelcontextprotocol.spec.McpSchema;
+import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
 import io.modelcontextprotocol.util.Assert;
 import io.modelcontextprotocol.util.Utils;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 /**
- * MCP server features specification that a particular server can choose to support.
+ * MCP server features specification that a particular server can choose to
+ * support.
  *
  * @author Dariusz Jędrzejczyk
  */
@@ -27,14 +29,15 @@ public class McpServerFeatures {
 	/**
 	 * Asynchronous server features specification.
 	 *
-	 * @param serverInfo The server implementation details
-	 * @param serverCapabilities The server capabilities
-	 * @param tools The list of tool registrations
-	 * @param resources The map of resource registrations
-	 * @param resourceTemplates The list of resource templates
-	 * @param prompts The map of prompt registrations
-	 * @param rootsChangeConsumers The list of consumers that will be notified when the
-	 * roots list changes
+	 * @param serverInfo           The server implementation details
+	 * @param serverCapabilities   The server capabilities
+	 * @param tools                The list of tool registrations
+	 * @param resources            The map of resource registrations
+	 * @param resourceTemplates    The list of resource templates
+	 * @param prompts              The map of prompt registrations
+	 * @param rootsChangeConsumers The list of consumers that will be notified when
+	 *                             the
+	 *                             roots list changes
 	 */
 	record Async(McpSchema.Implementation serverInfo, McpSchema.ServerCapabilities serverCapabilities,
 			List<McpServerFeatures.AsyncToolRegistration> tools, Map<String, AsyncResourceRegistration> resources,
@@ -44,14 +47,15 @@ public class McpServerFeatures {
 
 		/**
 		 * Create an instance and validate the arguments.
-		 * @param serverInfo The server implementation details
-		 * @param serverCapabilities The server capabilities
-		 * @param tools The list of tool registrations
-		 * @param resources The map of resource registrations
-		 * @param resourceTemplates The list of resource templates
-		 * @param prompts The map of prompt registrations
+		 * 
+		 * @param serverInfo           The server implementation details
+		 * @param serverCapabilities   The server capabilities
+		 * @param tools                The list of tool registrations
+		 * @param resources            The map of resource registrations
+		 * @param resourceTemplates    The list of resource templates
+		 * @param prompts              The map of prompt registrations
 		 * @param rootsChangeConsumers The list of consumers that will be notified when
-		 * the roots list changes
+		 *                             the roots list changes
 		 */
 		Async(McpSchema.Implementation serverInfo, McpSchema.ServerCapabilities serverCapabilities,
 				List<McpServerFeatures.AsyncToolRegistration> tools, Map<String, AsyncResourceRegistration> resources,
@@ -70,7 +74,8 @@ public class McpServerFeatures {
 																					// default
 							!Utils.isEmpty(prompts) ? new McpSchema.ServerCapabilities.PromptCapabilities(false) : null,
 							!Utils.isEmpty(resources)
-									? new McpSchema.ServerCapabilities.ResourceCapabilities(false, false) : null,
+									? new McpSchema.ServerCapabilities.ResourceCapabilities(false, false)
+									: null,
 							!Utils.isEmpty(tools) ? new McpSchema.ServerCapabilities.ToolCapabilities(false) : null);
 
 			this.tools = (tools != null) ? tools : List.of();
@@ -84,14 +89,16 @@ public class McpServerFeatures {
 		 * Convert a synchronous specification into an asynchronous one and provide
 		 * blocking code offloading to prevent accidental blocking of the non-blocking
 		 * transport.
+		 * 
 		 * @param syncSpec a potentially blocking, synchronous specification.
-		 * @return a specification which is protected from blocking calls specified by the
-		 * user.
+		 * @return a specification which is protected from blocking calls specified by
+		 *         the
+		 *         user.
 		 */
 		static Async fromSync(Sync syncSpec) {
-			List<McpServerFeatures.AsyncToolRegistration> tools = new ArrayList<>();
+			List<McpServerFeatures.AsyncToolRegistrationInterface<?>> tools = new ArrayList<>();
 			for (var tool : syncSpec.tools()) {
-				tools.add(AsyncToolRegistration.fromSync(tool));
+				tools.add(AsyncToolRegistrationInterface.fromSync(tool));
 			}
 
 			Map<String, AsyncResourceRegistration> resources = new HashMap<>();
@@ -108,7 +115,7 @@ public class McpServerFeatures {
 
 			for (var rootChangeConsumer : syncSpec.rootsChangeConsumers()) {
 				rootChangeConsumers.add(list -> Mono.<Void>fromRunnable(() -> rootChangeConsumer.accept(list))
-					.subscribeOn(Schedulers.boundedElastic()));
+						.subscribeOn(Schedulers.boundedElastic()));
 			}
 
 			return new Async(syncSpec.serverInfo(), syncSpec.serverCapabilities(), tools, resources,
@@ -119,17 +126,18 @@ public class McpServerFeatures {
 	/**
 	 * Synchronous server features specification.
 	 *
-	 * @param serverInfo The server implementation details
-	 * @param serverCapabilities The server capabilities
-	 * @param tools The list of tool registrations
-	 * @param resources The map of resource registrations
-	 * @param resourceTemplates The list of resource templates
-	 * @param prompts The map of prompt registrations
-	 * @param rootsChangeConsumers The list of consumers that will be notified when the
-	 * roots list changes
+	 * @param serverInfo           The server implementation details
+	 * @param serverCapabilities   The server capabilities
+	 * @param tools                The list of tool registrations
+	 * @param resources            The map of resource registrations
+	 * @param resourceTemplates    The list of resource templates
+	 * @param prompts              The map of prompt registrations
+	 * @param rootsChangeConsumers The list of consumers that will be notified when
+	 *                             the
+	 *                             roots list changes
 	 */
 	record Sync(McpSchema.Implementation serverInfo, McpSchema.ServerCapabilities serverCapabilities,
-			List<McpServerFeatures.SyncToolRegistration> tools,
+			List<McpServerFeatures.SyncToolRegistrationInterface<?>> tools,
 			Map<String, McpServerFeatures.SyncResourceRegistration> resources,
 			List<McpSchema.ResourceTemplate> resourceTemplates,
 			Map<String, McpServerFeatures.SyncPromptRegistration> prompts,
@@ -137,17 +145,18 @@ public class McpServerFeatures {
 
 		/**
 		 * Create an instance and validate the arguments.
-		 * @param serverInfo The server implementation details
-		 * @param serverCapabilities The server capabilities
-		 * @param tools The list of tool registrations
-		 * @param resources The map of resource registrations
-		 * @param resourceTemplates The list of resource templates
-		 * @param prompts The map of prompt registrations
+		 * 
+		 * @param serverInfo           The server implementation details
+		 * @param serverCapabilities   The server capabilities
+		 * @param tools                The list of tool registrations
+		 * @param resources            The map of resource registrations
+		 * @param resourceTemplates    The list of resource templates
+		 * @param prompts              The map of prompt registrations
 		 * @param rootsChangeConsumers The list of consumers that will be notified when
-		 * the roots list changes
+		 *                             the roots list changes
 		 */
 		Sync(McpSchema.Implementation serverInfo, McpSchema.ServerCapabilities serverCapabilities,
-				List<McpServerFeatures.SyncToolRegistration> tools,
+				List<McpServerFeatures.SyncToolRegistrationInterface<?>> tools,
 				Map<String, McpServerFeatures.SyncResourceRegistration> resources,
 				List<McpSchema.ResourceTemplate> resourceTemplates,
 				Map<String, McpServerFeatures.SyncPromptRegistration> prompts,
@@ -164,7 +173,8 @@ public class McpServerFeatures {
 																					// default
 							!Utils.isEmpty(prompts) ? new McpSchema.ServerCapabilities.PromptCapabilities(false) : null,
 							!Utils.isEmpty(resources)
-									? new McpSchema.ServerCapabilities.ResourceCapabilities(false, false) : null,
+									? new McpSchema.ServerCapabilities.ResourceCapabilities(false, false)
+									: null,
 							!Utils.isEmpty(tools) ? new McpSchema.ServerCapabilities.ToolCapabilities(false) : null);
 
 			this.tools = (tools != null) ? tools : new ArrayList<>();
@@ -172,6 +182,31 @@ public class McpServerFeatures {
 			this.resourceTemplates = (resourceTemplates != null) ? resourceTemplates : new ArrayList<>();
 			this.prompts = (prompts != null) ? prompts : new HashMap<>();
 			this.rootsChangeConsumers = (rootsChangeConsumers != null) ? rootsChangeConsumers : new ArrayList<>();
+		}
+
+	}
+
+	public static interface AsyncToolRegistrationInterface<T> {
+		McpSchema.Tool tool();
+
+		Function<T, Mono<CallToolResult>> call();
+
+		static AsyncToolRegistrationInterface<?> fromSync(SyncToolRegistrationInterface<?> tool) {
+			// FIXME: This is temporary, proper validation should be implemented
+			if (tool == null) {
+				return null;
+			}
+
+			if (tool instanceof SyncToolRegistration syncTool) {
+				return new AsyncToolRegistration(syncTool.tool(),
+						map -> Mono.fromCallable(() -> tool.call().apply(map))
+								.subscribeOn(Schedulers.boundedElastic()));
+			} else if (tool instanceof SyncToolRegistration2 tool2) {
+				return new AsyncToolRegistration2(tool2.tool(),
+					(AsyncClientCallback<Map<String, Object>> asyncClientCallback) -> Mono.fromCallable(() -> tool2.call().apply(map))
+								.subscribeOn(Schedulers.boundedElastic()));
+			}
+			return null;
 		}
 
 	}
@@ -189,28 +224,31 @@ public class McpServerFeatures {
 	 * </ul>
 	 *
 	 * <p>
-	 * Example tool registration: <pre>{@code
+	 * Example tool registration:
+	 *
+	 * <pre>{@code
 	 * new McpServerFeatures.AsyncToolRegistration(
-	 *     new Tool(
-	 *         "calculator",
-	 *         "Performs mathematical calculations",
-	 *         new JsonSchemaObject()
-	 *             .required("expression")
-	 *             .property("expression", JsonSchemaType.STRING)
-	 *     ),
-	 *     args -> {
-	 *         String expr = (String) args.get("expression");
-	 *         return Mono.just(new CallToolResult("Result: " + evaluate(expr)));
-	 *     }
-	 * )
+	 * 		new Tool(
+	 * 				"calculator",
+	 * 				"Performs mathematical calculations",
+	 * 				new JsonSchemaObject()
+	 * 						.required("expression")
+	 * 						.property("expression", JsonSchemaType.STRING)),
+	 * 		args -> {
+	 * 			String expr = (String) args.get("expression");
+	 * 			return Mono.just(new CallToolResult("Result: " + evaluate(expr)));
+	 * 		})
 	 * }</pre>
 	 *
-	 * @param tool The tool definition including name, description, and parameter schema
-	 * @param call The function that implements the tool's logic, receiving arguments and
-	 * returning results
+	 * @param tool The tool definition including name, description, and parameter
+	 *             schema
+	 * @param call The function that implements the tool's logic, receiving
+	 *             arguments and
+	 *             returning results
 	 */
 	public record AsyncToolRegistration(McpSchema.Tool tool,
-			Function<Map<String, Object>, Mono<McpSchema.CallToolResult>> call) {
+			Function<Map<String, Object>, Mono<McpSchema.CallToolResult>> call)
+			implements AsyncToolRegistrationInterface<Map<String, Object>> {
 
 		static AsyncToolRegistration fromSync(SyncToolRegistration tool) {
 			// FIXME: This is temporary, proper validation should be implemented
@@ -219,6 +257,24 @@ public class McpServerFeatures {
 			}
 			return new AsyncToolRegistration(tool.tool(),
 					map -> Mono.fromCallable(() -> tool.call().apply(map)).subscribeOn(Schedulers.boundedElastic()));
+		}
+
+	}
+
+	public record AsyncClientCallback<T>(McpAsyncClientCallback clientCallback, T data) {
+	}
+
+	public record AsyncToolRegistration2(McpSchema.Tool tool,
+			Function<AsyncClientCallback<Map<String, Object>>, Mono<McpSchema.CallToolResult>> call)
+			implements AsyncToolRegistrationInterface<AsyncClientCallback<Map<String, Object>>> {
+
+		static AsyncToolRegistration2 fromSync(SyncToolRegistration tool) {
+			if (tool == null) {
+				return null;
+			}
+			return new AsyncToolRegistration2(tool.tool(),
+					clientCallback -> Mono.fromCallable(() -> tool.call().apply(clientCallback.data()))
+							.subscribeOn(Schedulers.boundedElastic()));
 		}
 	}
 
@@ -234,17 +290,19 @@ public class McpServerFeatures {
 	 * </ul>
 	 *
 	 * <p>
-	 * Example resource registration: <pre>{@code
+	 * Example resource registration:
+	 *
+	 * <pre>{@code
 	 * new McpServerFeatures.AsyncResourceRegistration(
-	 *     new Resource("docs", "Documentation files", "text/markdown"),
-	 *     request -> {
-	 *         String content = readFile(request.getPath());
-	 *         return Mono.just(new ReadResourceResult(content));
-	 *     }
-	 * )
+	 * 		new Resource("docs", "Documentation files", "text/markdown"),
+	 * 		request -> {
+	 * 			String content = readFile(request.getPath());
+	 * 			return Mono.just(new ReadResourceResult(content));
+	 * 		})
 	 * }</pre>
 	 *
-	 * @param resource The resource definition including name, description, and MIME type
+	 * @param resource    The resource definition including name, description, and
+	 *                    MIME type
 	 * @param readHandler The function that handles resource read requests
 	 */
 	public record AsyncResourceRegistration(McpSchema.Resource resource,
@@ -257,12 +315,13 @@ public class McpServerFeatures {
 			}
 			return new AsyncResourceRegistration(resource.resource(),
 					req -> Mono.fromCallable(() -> resource.readHandler().apply(req))
-						.subscribeOn(Schedulers.boundedElastic()));
+							.subscribeOn(Schedulers.boundedElastic()));
 		}
 	}
 
 	/**
-	 * Registration of a prompt template with its asynchronous handler function. Prompts
+	 * Registration of a prompt template with its asynchronous handler function.
+	 * Prompts
 	 * provide structured templates for AI model interactions, supporting:
 	 * <ul>
 	 * <li>Consistent message formatting
@@ -273,21 +332,21 @@ public class McpServerFeatures {
 	 * </ul>
 	 *
 	 * <p>
-	 * Example prompt registration: <pre>{@code
+	 * Example prompt registration:
+	 *
+	 * <pre>{@code
 	 * new McpServerFeatures.AsyncPromptRegistration(
-	 *     new Prompt("analyze", "Code analysis template"),
-	 *     request -> {
-	 *         String code = request.getArguments().get("code");
-	 *         return Mono.just(new GetPromptResult(
-	 *             "Analyze this code:\n\n" + code + "\n\nProvide feedback on:"
-	 *         ));
-	 *     }
-	 * )
+	 * 		new Prompt("analyze", "Code analysis template"),
+	 * 		request -> {
+	 * 			String code = request.getArguments().get("code");
+	 * 			return Mono.just(new GetPromptResult(
+	 * 					"Analyze this code:\n\n" + code + "\n\nProvide feedback on:"));
+	 * 		})
 	 * }</pre>
 	 *
-	 * @param prompt The prompt definition including name and description
+	 * @param prompt        The prompt definition including name and description
 	 * @param promptHandler The function that processes prompt requests and returns
-	 * formatted templates
+	 *                      formatted templates
 	 */
 	public record AsyncPromptRegistration(McpSchema.Prompt prompt,
 			Function<McpSchema.GetPromptRequest, Mono<McpSchema.GetPromptResult>> promptHandler) {
@@ -299,13 +358,15 @@ public class McpServerFeatures {
 			}
 			return new AsyncPromptRegistration(prompt.prompt(),
 					req -> Mono.fromCallable(() -> prompt.promptHandler().apply(req))
-						.subscribeOn(Schedulers.boundedElastic()));
+							.subscribeOn(Schedulers.boundedElastic()));
 		}
 	}
 
 	/**
-	 * Registration of a tool with its synchronous handler function. Tools are the primary
-	 * way for MCP servers to expose functionality to AI models. Each tool represents a
+	 * Registration of a tool with its synchronous handler function. Tools are the
+	 * primary
+	 * way for MCP servers to expose functionality to AI models. Each tool
+	 * represents a
 	 * specific capability, such as:
 	 * <ul>
 	 * <li>Performing calculations
@@ -316,32 +377,50 @@ public class McpServerFeatures {
 	 * </ul>
 	 *
 	 * <p>
-	 * Example tool registration: <pre>{@code
+	 * Example tool registration:
+	 *
+	 * <pre>{@code
 	 * new McpServerFeatures.SyncToolRegistration(
-	 *     new Tool(
-	 *         "calculator",
-	 *         "Performs mathematical calculations",
-	 *         new JsonSchemaObject()
-	 *             .required("expression")
-	 *             .property("expression", JsonSchemaType.STRING)
-	 *     ),
-	 *     args -> {
-	 *         String expr = (String) args.get("expression");
-	 *         return new CallToolResult("Result: " + evaluate(expr));
-	 *     }
-	 * )
+	 * 		new Tool(
+	 * 				"calculator",
+	 * 				"Performs mathematical calculations",
+	 * 				new JsonSchemaObject()
+	 * 						.required("expression")
+	 * 						.property("expression", JsonSchemaType.STRING)),
+	 * 		args -> {
+	 * 			String expr = (String) args.get("expression");
+	 * 			return new CallToolResult("Result: " + evaluate(expr));
+	 * 		})
 	 * }</pre>
 	 *
-	 * @param tool The tool definition including name, description, and parameter schema
-	 * @param call The function that implements the tool's logic, receiving arguments and
-	 * returning results
+	 * @param tool The tool definition including name, description, and parameter
+	 *             schema
+	 * @param call The function that implements the tool's logic, receiving
+	 *             arguments and
+	 *             returning results
 	 */
 	public record SyncToolRegistration(McpSchema.Tool tool,
-			Function<Map<String, Object>, McpSchema.CallToolResult> call) {
+			Function<Map<String, Object>, McpSchema.CallToolResult> call)
+			implements SyncToolRegistrationInterface<Map<String, Object>> {
+	}
+
+	public record SyncClientCallback<T>(McpSyncClientCallback clientCallback, T data) {
+	}
+
+	public record SyncToolRegistration2(McpSchema.Tool tool,
+			Function<SyncClientCallback<Map<String, Object>>, McpSchema.CallToolResult> call)
+			implements SyncToolRegistrationInterface<SyncClientCallback<Map<String, Object>>> {
+	}
+
+	public static interface SyncToolRegistrationInterface<T> {
+		McpSchema.Tool tool();
+
+		Function<T, McpSchema.CallToolResult> call();
 	}
 
 	/**
-	 * Registration of a resource with its synchronous handler function. Resources provide
+	 * Registration of a resource with its synchronous handler function. Resources
+	 * provide
 	 * context to AI models by exposing data such as:
 	 * <ul>
 	 * <li>File contents
@@ -352,17 +431,19 @@ public class McpServerFeatures {
 	 * </ul>
 	 *
 	 * <p>
-	 * Example resource registration: <pre>{@code
+	 * Example resource registration:
+	 *
+	 * <pre>{@code
 	 * new McpServerFeatures.SyncResourceRegistration(
-	 *     new Resource("docs", "Documentation files", "text/markdown"),
-	 *     request -> {
-	 *         String content = readFile(request.getPath());
-	 *         return new ReadResourceResult(content);
-	 *     }
-	 * )
+	 * 		new Resource("docs", "Documentation files", "text/markdown"),
+	 * 		request -> {
+	 * 			String content = readFile(request.getPath());
+	 * 			return new ReadResourceResult(content);
+	 * 		})
 	 * }</pre>
 	 *
-	 * @param resource The resource definition including name, description, and MIME type
+	 * @param resource    The resource definition including name, description, and
+	 *                    MIME type
 	 * @param readHandler The function that handles resource read requests
 	 */
 	public record SyncResourceRegistration(McpSchema.Resource resource,
@@ -370,7 +451,8 @@ public class McpServerFeatures {
 	}
 
 	/**
-	 * Registration of a prompt template with its synchronous handler function. Prompts
+	 * Registration of a prompt template with its synchronous handler function.
+	 * Prompts
 	 * provide structured templates for AI model interactions, supporting:
 	 * <ul>
 	 * <li>Consistent message formatting
@@ -381,21 +463,21 @@ public class McpServerFeatures {
 	 * </ul>
 	 *
 	 * <p>
-	 * Example prompt registration: <pre>{@code
+	 * Example prompt registration:
+	 *
+	 * <pre>{@code
 	 * new McpServerFeatures.SyncPromptRegistration(
-	 *     new Prompt("analyze", "Code analysis template"),
-	 *     request -> {
-	 *         String code = request.getArguments().get("code");
-	 *         return new GetPromptResult(
-	 *             "Analyze this code:\n\n" + code + "\n\nProvide feedback on:"
-	 *         );
-	 *     }
-	 * )
+	 * 		new Prompt("analyze", "Code analysis template"),
+	 * 		request -> {
+	 * 			String code = request.getArguments().get("code");
+	 * 			return new GetPromptResult(
+	 * 					"Analyze this code:\n\n" + code + "\n\nProvide feedback on:");
+	 * 		})
 	 * }</pre>
 	 *
-	 * @param prompt The prompt definition including name and description
+	 * @param prompt        The prompt definition including name and description
 	 * @param promptHandler The function that processes prompt requests and returns
-	 * formatted templates
+	 *                      formatted templates
 	 */
 	public record SyncPromptRegistration(McpSchema.Prompt prompt,
 			Function<McpSchema.GetPromptRequest, McpSchema.GetPromptResult> promptHandler) {

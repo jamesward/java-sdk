@@ -47,21 +47,6 @@ public interface McpSession {
 	}
 
 	/**
-	 * Sends a notification to the model server without parameters.
-	 *
-	 * <p>
-	 * This method implements the notification pattern where no response is expected from
-	 * the server. It's useful for fire-and-forget scenarios.
-	 * </p>
-	 * @param method the name of the notification method to be called on the server
-	 * @param metadata a map of metadata to be sent with the notification
-	 * @return a Mono that completes when the notification has been sent
-	 */
-	// default Mono<Void> sendNotification(String method) {
-	// return sendNotification(method, null, metadata);
-	// }
-
-	/**
 	 * Sends a notification to the model server with parameters.
 	 *
 	 * <p>

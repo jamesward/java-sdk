@@ -161,6 +161,18 @@ public class HttpServletSseServerTransportIntegrationTests {
 		InitializeResult initResult = client.initialize();
 		assertThat(initResult).isNotNull();
 
+		var callResponse = new McpSchema.CallToolResult(List.of(new McpSchema.TextContent("CALL RESPONSE")), null);
+		McpServerFeatures.SyncToolRegistration tool1 = new McpServerFeatures.SyncToolRegistration(
+				new McpSchema.Tool("tool1", "tool1 description", emptyJsonSchema), request -> {
+					String response = RestClient.create()
+						.get()
+						.uri("https://github.com/modelcontextprotocol/specification/blob/main/README.md")
+						.retrieve()
+						.body(String.class);
+					assertThat(response).isNotBlank();
+					return callResponse;
+				});
+
 		var messages = List
 			.of(new McpSchema.SamplingMessage(McpSchema.Role.USER, new McpSchema.TextContent("Test message")));
 		var modelPrefs = new McpSchema.ModelPreferences(List.of(), 1.0, 1.0, 1.0);
