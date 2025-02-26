@@ -24,6 +24,7 @@ import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
 import io.modelcontextprotocol.spec.McpSchema.LoggingLevel;
 import io.modelcontextprotocol.spec.McpSchema.LoggingMessageNotification;
 import io.modelcontextprotocol.spec.McpSchema.Tool;
+import io.modelcontextprotocol.spec.McpSession;
 import io.modelcontextprotocol.spec.ServerMcpTransport;
 import io.modelcontextprotocol.util.Utils;
 import org.slf4j.Logger;
@@ -75,6 +76,67 @@ import reactor.core.publisher.Mono;
 public class McpAsyncServer {
 
 	private static final Logger logger = LoggerFactory.getLogger(McpAsyncServer.class);
+
+	static class McpAsyncClientCallback {
+
+		private static final TypeReference<McpSchema.CreateMessageResult> CREATE_MESSAGE_RESULT_TYPE_REF = new TypeReference<>() {
+		};
+
+		private static final TypeReference<McpSchema.ListRootsResult> LIST_ROOTS_RESULT_TYPE_REF = new TypeReference<>() {
+		};
+
+		private final McpSession mcpSession;
+
+		private final ClientSession clientSession;
+
+		McpAsyncClientCallback(McpSession mcpSession, ClientSession clientSession) {
+			this.mcpSession = mcpSession;
+			this.clientSession = clientSession;
+		}
+
+		/**
+		 * Create a new message using the sampling capabilities of the client. The Model
+		 * Context Protocol (MCP) provides a standardized way for servers to request LLM
+		 * sampling (“completions” or “generations”) from language models via clients.
+		 * This flow allows clients to maintain control over model access, selection, and
+		 * permissions while enabling servers to leverage AI capabilities—with no server
+		 * API keys necessary. Servers can request text or image-based interactions and
+		 * optionally include context from MCP servers in their prompts.
+		 * @param createMessageRequest The request to create a new message
+		 * @return A Mono that completes when the message has been created
+		 * @throws McpError if the client has not been initialized or does not support
+		 * sampling capabilities
+		 * @throws McpError if the client does not support the createMessage method
+		 * @see McpSchema.CreateMessageRequest
+		 * @see McpSchema.CreateMessageResult
+		 * @see <a href=
+		 * "https://spec.modelcontextprotocol.io/specification/client/sampling/">Sampling
+		 * Specification</a>
+		 */
+		public Mono<McpSchema.CreateMessageResult> createMessage(McpSchema.CreateMessageRequest createMessageRequest) {
+
+			if (this.clientSession.isInitialized() == false) {
+				return Mono
+					.error(new McpError("Client session not initialized for session ID: " + clientSession.sessionId));
+			}
+			if (this.clientSession.getClientCapabilities().sampling() == null) {
+				return Mono.error(new McpError("Client must be configured with sampling capabilities"));
+			}
+
+			return this.mcpSession.sendRequest(McpSchema.METHOD_SAMPLING_CREATE_MESSAGE, createMessageRequest,
+					CREATE_MESSAGE_RESULT_TYPE_REF, Map.of("sessionId", clientSession.sessionId));
+		}
+
+		/**
+		 * Retrieves the list of all roots provided by the client.
+		 * @return A Mono that emits the list of roots result.
+		 */
+		public Mono<McpSchema.ListRootsResult> listRoots(String cursor) {
+			return this.mcpSession.sendRequest(McpSchema.METHOD_ROOTS_LIST, new McpSchema.PaginatedRequest(cursor),
+					LIST_ROOTS_RESULT_TYPE_REF, Map.of("sessionId", this.clientSession.sessionId));
+		}
+
+	}
 
 	/**
 	 * The MCP session implementation that manages bidirectional JSON-RPC communication
@@ -266,28 +328,10 @@ public class McpAsyncServer {
 	private static final TypeReference<McpSchema.ListRootsResult> LIST_ROOTS_RESULT_TYPE_REF = new TypeReference<>() {
 	};
 
-	/**
-	 * Retrieves the list of all roots provided by the client.
-	 * @return A Mono that emits the list of roots result.
-	 */
-	public Mono<McpSchema.ListRootsResult> listRoots() {
-		return this.listRoots(null);
-	}
-
-	/**
-	 * Retrieves a paginated list of roots provided by the server.
-	 * @param cursor Optional pagination cursor from a previous list request
-	 * @return A Mono that emits the list of roots result containing
-	 */
-	public Mono<McpSchema.ListRootsResult> listRoots(String cursor) {
-		return this.mcpSession.sendRequest(McpSchema.METHOD_ROOTS_LIST, new McpSchema.PaginatedRequest(cursor),
-				LIST_ROOTS_RESULT_TYPE_REF);
-	}
-
 	private NotificationHandler asyncRootsListChangedNotificationHandler(
 			List<Function<List<McpSchema.Root>, Mono<Void>>> rootsChangeConsumers) {
 
-		return notification -> listRoots(null, sessionId(notification))
+		return notification -> this.listRoots(null, sessionId(notification))
 			.flatMap(listRootsResult -> Flux.fromIterable(rootsChangeConsumers)
 				.flatMap(consumer -> consumer.apply(listRootsResult.roots()))
 				.onErrorResume(error -> {
@@ -413,11 +457,12 @@ public class McpAsyncServer {
 			if (!toolRegistration.isPresent()) {
 				return Mono.error(new McpError("Tool not found: " + callToolRequest.name()));
 			}
-			
-			if (toolRegistration.get() instanceof McpServerFeatures.AsyncToolRegistration tool) {				
+
+			if (toolRegistration.get() instanceof McpServerFeatures.AsyncToolRegistration tool) {
 				return tool.call().apply(callToolRequest.arguments());
-			} else if (toolRegistration.get() instanceof McpServerFeatures.AsyncToolRegistration2 tool) {
-				var clientSessionId = sessionId(request);				
+			}
+			else if (toolRegistration.get() instanceof McpServerFeatures.AsyncToolRegistrationWithClientCallback tool) {
+				var clientSessionId = sessionId(request);
 				if (clientSessionId == null) {
 					return Mono.error(new McpError("Session ID missing in the request:" + request));
 				}
@@ -425,8 +470,11 @@ public class McpAsyncServer {
 				if (clientSession == null) {
 					return Mono.error(new McpError("Client session not found for session ID: " + clientSessionId));
 				}
-				return tool.call().apply(new AsyncClientCallback(new McpAsyncClientCallback(this.mcpSession, clientSession), tool.call()));
-			} else {
+				return tool.call()
+					.apply(new AsyncClientCallback(new McpAsyncClientCallback(this.mcpSession, clientSession),
+							callToolRequest.arguments()));
+			}
+			else {
 				return Mono.error(new McpError("Tool not found: " + callToolRequest.name()));
 			}
 		};
@@ -702,54 +750,6 @@ public class McpAsyncServer {
 
 			return Mono.empty();
 		};
-	}
-
-	// ---------------------------------------
-	// Sampling
-	// ---------------------------------------
-	private static final TypeReference<McpSchema.CreateMessageResult> CREATE_MESSAGE_RESULT_TYPE_REF = new TypeReference<>() {
-	};
-
-	/**
-	 * Create a new message using the sampling capabilities of the client. The Model
-	 * Context Protocol (MCP) provides a standardized way for servers to request LLM
-	 * sampling (“completions” or “generations”) from language models via clients. This
-	 * flow allows clients to maintain control over model access, selection, and
-	 * permissions while enabling servers to leverage AI capabilities—with no server API
-	 * keys necessary. Servers can request text or image-based interactions and optionally
-	 * include context from MCP servers in their prompts.
-	 * @param createMessageRequest The request to create a new message
-	 * @return A Mono that completes when the message has been created
-	 * @throws McpError if the client has not been initialized or does not support
-	 * sampling capabilities
-	 * @throws McpError if the client does not support the createMessage method
-	 * @see McpSchema.CreateMessageRequest
-	 * @see McpSchema.CreateMessageResult
-	 * @see <a href=
-	 * "https://spec.modelcontextprotocol.io/specification/client/sampling/">Sampling
-	 * Specification</a>
-	 */
-	public Mono<McpSchema.CreateMessageResult> createMessage(McpSchema.CreateMessageRequest createMessageRequest) {
-
-		String sessionId = (createMessageRequest.metadata() != null)
-				? (String) createMessageRequest.metadata().get("sessionId") : null;
-
-		if (sessionId == null) {
-			return Mono.error(new McpError("Session ID must be provided in the metadata"));
-		}
-		var clientSession = this.clientSessions.get(sessionId);
-		if (clientSession == null) {
-			return Mono.error(new McpError("Client session not found for session ID: " + sessionId));
-		}
-		if (clientSession.isInitialized() == false) {
-			return Mono.error(new McpError("Client session not initialized for session ID: " + sessionId));
-		}
-		if (clientSession.getClientCapabilities().sampling() == null) {
-			return Mono.error(new McpError("Client must be configured with sampling capabilities"));
-		}
-
-		return this.mcpSession.sendRequest(McpSchema.METHOD_SAMPLING_CREATE_MESSAGE, createMessageRequest,
-				CREATE_MESSAGE_RESULT_TYPE_REF, Map.of("sessionId", sessionId));
 	}
 
 	/**

@@ -4,11 +4,13 @@
 
 package io.modelcontextprotocol.server;
 
+import io.modelcontextprotocol.server.McpAsyncServer.McpAsyncClientCallback;
 import io.modelcontextprotocol.spec.McpError;
 import io.modelcontextprotocol.spec.McpSchema;
 import io.modelcontextprotocol.spec.McpSchema.ClientCapabilities;
 import io.modelcontextprotocol.spec.McpSchema.LoggingMessageNotification;
 import io.modelcontextprotocol.util.Assert;
+import reactor.core.publisher.Mono;
 
 /**
  * A synchronous implementation of the Model Context Protocol (MCP) server that wraps
@@ -56,6 +58,24 @@ public class McpSyncServer {
 	 */
 	private final McpAsyncServer asyncServer;
 
+	static class McpSyncClientCallback {
+
+		private final McpAsyncClientCallback delegate;
+
+		McpSyncClientCallback(McpAsyncClientCallback delegate) {
+			this.delegate = delegate;
+		}
+
+		public McpSchema.CreateMessageResult createMessage(McpSchema.CreateMessageRequest createMessageRequest) {
+			return this.delegate.createMessage(createMessageRequest).block();
+		}
+
+		public Mono<McpSchema.ListRootsResult> listRoots(String cursor) {
+			return this.delegate.listRoots(cursor);
+		}
+
+	}
+
 	/**
 	 * Creates a new synchronous server that wraps the provided async server.
 	 * @param asyncServer The async server to wrap
@@ -63,23 +83,6 @@ public class McpSyncServer {
 	public McpSyncServer(McpAsyncServer asyncServer) {
 		Assert.notNull(asyncServer, "Async server must not be null");
 		this.asyncServer = asyncServer;
-	}
-
-	/**
-	 * Retrieves the list of all roots provided by the client.
-	 * @return The list of roots
-	 */
-	public McpSchema.ListRootsResult listRoots() {
-		return this.listRoots(null);
-	}
-
-	/**
-	 * Retrieves a paginated list of roots provided by the server.
-	 * @param cursor Optional pagination cursor from a previous list request
-	 * @return The list of roots
-	 */
-	public McpSchema.ListRootsResult listRoots(String cursor) {
-		return this.asyncServer.listRoots(cursor).block();
 	}
 
 	/**
@@ -195,35 +198,6 @@ public class McpSyncServer {
 	 */
 	public McpAsyncServer getAsyncServer() {
 		return this.asyncServer;
-	}
-
-	/**
-	 * Create a new message using the sampling capabilities of the client. The Model
-	 * Context Protocol (MCP) provides a standardized way for servers to request LLM
-	 * sampling ("completions" or "generations") from language models via clients.
-	 *
-	 * <p>
-	 * This flow allows clients to maintain control over model access, selection, and
-	 * permissions while enabling servers to leverage AI capabilities—with no server API
-	 * keys necessary. Servers can request text or image-based interactions and optionally
-	 * include context from MCP servers in their prompts.
-	 *
-	 * <p>
-	 * Unlike its async counterpart, this method blocks until the message creation is
-	 * complete, making it easier to use in synchronous code paths.
-	 * @param createMessageRequest The request to create a new message
-	 * @return The result of the message creation
-	 * @throws McpError if the client has not been initialized or does not support
-	 * sampling capabilities
-	 * @throws McpError if the client does not support the createMessage method
-	 * @see McpSchema.CreateMessageRequest
-	 * @see McpSchema.CreateMessageResult
-	 * @see <a href=
-	 * "https://spec.modelcontextprotocol.io/specification/client/sampling/">Sampling
-	 * Specification</a>
-	 */
-	public McpSchema.CreateMessageResult createMessage(McpSchema.CreateMessageRequest createMessageRequest) {
-		return this.asyncServer.createMessage(createMessageRequest).block();
 	}
 
 }

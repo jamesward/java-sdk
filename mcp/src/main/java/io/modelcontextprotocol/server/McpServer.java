@@ -157,7 +157,7 @@ public interface McpServer {
 		 * Each tool is uniquely identified by a name and includes metadata describing its
 		 * schema.
 		 */
-		private final List<McpServerFeatures.AsyncToolRegistration> tools = new ArrayList<>();
+		private final List<McpServerFeatures.AsyncToolRegistrationInterface<?>> tools = new ArrayList<>();
 
 		/**
 		 * The Model Context Protocol (MCP) provides a standardized way for servers to

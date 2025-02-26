@@ -15,6 +15,8 @@ import io.modelcontextprotocol.server.McpServerFeatures.SyncPromptRegistration;
 import io.modelcontextprotocol.server.transport.WebFluxSseServerTransport;
 import io.modelcontextprotocol.spec.McpSchema;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
+import io.modelcontextprotocol.spec.McpSchema.ClientCapabilities;
+import io.modelcontextprotocol.spec.McpSchema.Content;
 import io.modelcontextprotocol.spec.McpSchema.CreateMessageResult;
 import io.modelcontextprotocol.spec.McpSchema.GetPromptResult;
 import io.modelcontextprotocol.spec.McpSchema.ListPromptsResult;
@@ -22,6 +24,7 @@ import io.modelcontextprotocol.spec.McpSchema.ListToolsResult;
 import io.modelcontextprotocol.spec.McpSchema.Prompt;
 import io.modelcontextprotocol.spec.McpSchema.PromptMessage;
 import io.modelcontextprotocol.spec.McpSchema.ServerCapabilities;
+import io.modelcontextprotocol.spec.McpSchema.TextContent;
 import io.modelcontextprotocol.spec.ServerMcpTransport;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -73,19 +76,17 @@ class WebFluxSseMcpAsyncServer2Tests {
 	void testImmediateClose() {
 
 		var callResponse = new McpSchema.CallToolResult(List.of(new McpSchema.TextContent("CALL RESPONSE")), null);
-		McpServerFeatures.SyncToolRegistrationInterface<?> tool1 = new McpServerFeatures.SyncToolRegistration2(
+		McpServerFeatures.SyncToolRegistrationInterface<?> tool1 = new McpServerFeatures.SyncToolRegistrationWithClientCallback(
 				new McpSchema.Tool("tool1", "tool1 description", """
 						{
 							"": "http://json-schema.org/draft-07/schema#",
 							"type": "object",
 							"properties": {}
 						}
-						"""),
-				input -> {
+						"""), input -> {
 
-					var messages = List
-							.of(new McpSchema.SamplingMessage(McpSchema.Role.USER,
-									new McpSchema.TextContent("Test message")));
+					var messages = List.of(new McpSchema.SamplingMessage(McpSchema.Role.USER,
+							new McpSchema.TextContent("Test message")));
 					var modelPrefs = new McpSchema.ModelPreferences(List.of(), 1.0, 1.0, 1.0);
 
 					var request = new McpSchema.CreateMessageRequest(messages, modelPrefs, null,
@@ -96,32 +97,38 @@ class WebFluxSseMcpAsyncServer2Tests {
 
 					input.data();
 
-					String response = RestClient.create()
-							.get()
-							.uri("https://github.com/modelcontextprotocol/specification/blob/main/README.md")
-							.retrieve()
-							.body(String.class);
+					// String response = RestClient.create()
+					// .get()
+					// .uri("https://github.com/modelcontextprotocol/specification/blob/main/README.md")
+					// .retrieve()
+					// .body(String.class);
 					return callResponse;
 				});
 
 		Prompt prompt = new Prompt("TEST_PROMPT_NAME", "Test Prompt", List.of());
 		McpServerFeatures.SyncPromptRegistration registration = new McpServerFeatures.SyncPromptRegistration(prompt,
 				req -> new GetPromptResult("Test prompt description", List
-						.of(new PromptMessage(McpSchema.Role.ASSISTANT, new McpSchema.TextContent("Test content")))));
+					.of(new PromptMessage(McpSchema.Role.ASSISTANT, new McpSchema.TextContent("Test content")))));
 
 		var mcpServer = McpServer.sync(createMcpTransport())
-				.serverInfo("test-server", "1.0.0")
-				.capabilities(ServerCapabilities.builder().prompts(true).tools(true).build())
-				.prompts(registration)
-				.tools(tool1)
-				.build();
+			.serverInfo("test-server", "1.0.0")
+			.capabilities(ServerCapabilities.builder().prompts(true).tools(true).build())
+			.prompts(registration)
+			.tools(tool1)
+			.build();
 
-		mcpServer.createMessage(null);
+		// mcpServer.createMessage(null);
 
 		var mcpClient = McpClient
-				.sync(new WebFluxSseClientTransport(WebClient.builder().baseUrl("http://localhost:" + PORT)))
-				.requestTimeout(Duration.ofSeconds(60))
-				.build();
+			.sync(new WebFluxSseClientTransport(WebClient.builder().baseUrl("http://localhost:" + PORT)))
+			.capabilities(ClientCapabilities.builder().sampling().build())
+			.sampling(request -> {
+				System.out.println("Sampling request: " + request);
+				return CreateMessageResult.builder().content(new TextContent("Sampling response")).build();
+
+			})
+			.requestTimeout(Duration.ofSeconds(60))
+			.build();
 
 		var initResult = mcpClient.initialize();
 
