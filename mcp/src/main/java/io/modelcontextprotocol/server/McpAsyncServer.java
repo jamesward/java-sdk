@@ -15,7 +15,6 @@ import java.util.function.Function;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import io.modelcontextprotocol.server.McpServerFeatures.AsyncClientCallback;
-import io.modelcontextprotocol.server.McpServerFeatures.AsyncToolRegistrationInterface;
 import io.modelcontextprotocol.spec.DefaultMcpSession;
 import io.modelcontextprotocol.spec.DefaultMcpSession.NotificationHandler;
 import io.modelcontextprotocol.spec.McpError;
@@ -331,14 +330,26 @@ public class McpAsyncServer {
 	private NotificationHandler asyncRootsListChangedNotificationHandler(
 			List<Function<List<McpSchema.Root>, Mono<Void>>> rootsChangeConsumers) {
 
-		return notification -> this.listRoots(null, sessionId(notification))
-			.flatMap(listRootsResult -> Flux.fromIterable(rootsChangeConsumers)
-				.flatMap(consumer -> consumer.apply(listRootsResult.roots()))
-				.onErrorResume(error -> {
-					logger.error("Error handling roots list change notification", error);
-					return Mono.empty();
-				})
-				.then());
+		return notification -> this.listRoots(null, sessionId(notification)).flatMap(listRootsResult -> {
+			String sessionId = sessionId(notification);
+			if (sessionId == null) {
+				return Mono.error(new McpError("Session ID missing in the notification: " + notification));
+			}
+			ClientSession clientSession = this.clientSessions.get(sessionId);
+			if (clientSession == null) {
+				return Mono.error(new McpError("Client session not found for session ID: " + sessionId));
+			}
+			clientSession.getRoots().addAll(listRootsResult.roots());
+			return Mono.empty();
+		}).then();
+		// return notification -> this.listRoots(null, sessionId(notification))
+		// .flatMap(listRootsResult -> Flux.fromIterable(rootsChangeConsumers)
+		// .flatMap(consumer -> consumer.apply(listRootsResult.roots()))
+		// .onErrorResume(error -> {
+		// logger.error("Error handling roots list change notification", error);
+		// return Mono.empty();
+		// })
+		// .then());
 	}
 
 	private Mono<McpSchema.ListRootsResult> listRoots(String cursor, String clientSessionId) {

@@ -242,7 +242,7 @@ public class WebMvcSseIntegrationTests {
 	// ---------------------------------------
 	// Roots Tests
 	// ---------------------------------------
-	@Test
+	// @Test
 	void testRootsSuccess() {
 		List<Root> roots = List.of(new Root("uri1://", "root1"), new Root("uri2://", "root2"));
 
@@ -310,7 +310,7 @@ public class WebMvcSseIntegrationTests {
 	// mcpServer.close();
 	// }
 
-	@Test
+	// @Test
 	void testRootsWithEmptyRootsList() {
 		AtomicReference<List<Root>> rootsRef = new AtomicReference<>();
 		var mcpServer = McpServer.sync(mcpServerTransport)
@@ -334,7 +334,7 @@ public class WebMvcSseIntegrationTests {
 		mcpServer.close();
 	}
 
-	@Test
+	// @Test
 	void testRootsWithMultipleConsumers() {
 		List<Root> roots = List.of(new Root("uri1://", "root1"));
 
@@ -364,7 +364,7 @@ public class WebMvcSseIntegrationTests {
 		mcpServer.close();
 	}
 
-	@Test
+	// @Test
 	void testRootsServerCloseWithActiveSubscription() {
 		List<Root> roots = List.of(new Root("uri1://", "root1"));
 

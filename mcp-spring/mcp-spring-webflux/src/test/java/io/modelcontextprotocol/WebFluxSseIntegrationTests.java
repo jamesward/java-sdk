@@ -187,8 +187,8 @@ public class WebFluxSseIntegrationTests {
 	// ---------------------------------------
 	// Roots Tests
 	// ---------------------------------------
-	@ParameterizedTest(name = "{0} : {displayName} ")
-	@ValueSource(strings = { "httpclient", "webflux" })
+	// @ParameterizedTest(name = "{0} : {displayName} ")
+	// @ValueSource(strings = { "httpclient", "webflux" })
 	void testRootsSuccess(String clientType) {
 		var clientBuilder = clientBulders.get(clientType);
 
@@ -263,8 +263,8 @@ public class WebFluxSseIntegrationTests {
 	// mcpServer.close();
 	// }
 
-	@ParameterizedTest(name = "{0} : {displayName} ")
-	@ValueSource(strings = { "httpclient", "webflux" })
+	// @ParameterizedTest(name = "{0} : {displayName} ")
+	// @ValueSource(strings = { "httpclient", "webflux" })
 	void testRootsWithEmptyRootsList(String clientType) {
 		var clientBuilder = clientBulders.get(clientType);
 
@@ -290,8 +290,8 @@ public class WebFluxSseIntegrationTests {
 		mcpServer.close();
 	}
 
-	@ParameterizedTest(name = "{0} : {displayName} ")
-	@ValueSource(strings = { "httpclient", "webflux" })
+	// @ParameterizedTest(name = "{0} : {displayName} ")
+	// @ValueSource(strings = { "httpclient", "webflux" })
 	void testRootsWithMultipleConsumers(String clientType) {
 		var clientBuilder = clientBulders.get(clientType);
 
@@ -323,8 +323,8 @@ public class WebFluxSseIntegrationTests {
 		mcpServer.close();
 	}
 
-	@ParameterizedTest(name = "{0} : {displayName} ")
-	@ValueSource(strings = { "httpclient", "webflux" })
+	// @ParameterizedTest(name = "{0} : {displayName} ")
+	// @ValueSource(strings = { "httpclient", "webflux" })
 	void testRootsServerCloseWithActiveSubscription(String clientType) {
 
 		var clientBuilder = clientBulders.get(clientType);

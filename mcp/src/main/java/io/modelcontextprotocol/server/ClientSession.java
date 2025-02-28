@@ -1,9 +1,19 @@
+/*
+ * Copyright 2024-2024 the original author or authors.
+ */
 package io.modelcontextprotocol.server;
+
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 import io.modelcontextprotocol.spec.McpSchema;
 import io.modelcontextprotocol.spec.McpSchema.ClientCapabilities;
+import io.modelcontextprotocol.spec.McpSchema.Root;
 import io.modelcontextprotocol.util.Assert;
 
+/**
+ * @author Christian Tzolov
+ */
 class ClientSession {
 
 	final String sessionId;
@@ -13,6 +23,8 @@ class ClientSession {
 	private final McpSchema.Implementation clientInfo;
 
 	private boolean initialized;
+
+	private CopyOnWriteArrayList<Root> roots = new CopyOnWriteArrayList<>();
 
 	ClientSession(String sessionId, ClientCapabilities clientCapabilities, McpSchema.Implementation clientInfo) {
 
@@ -40,6 +52,10 @@ class ClientSession {
 
 	public void setInitialized(boolean initialized) {
 		this.initialized = initialized;
+	}
+
+	public List<Root> getRoots() {
+		return this.roots;
 	}
 
 }

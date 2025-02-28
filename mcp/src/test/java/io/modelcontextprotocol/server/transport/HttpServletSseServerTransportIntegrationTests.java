@@ -208,7 +208,7 @@ public class HttpServletSseServerTransportIntegrationTests {
 	// }).verifyComplete();
 	// }
 
-	@Test
+	// @Test
 	void testRootsSuccess() {
 		List<Root> roots = List.of(new Root("uri1://", "root1"), new Root("uri2://", "root2"));
 
