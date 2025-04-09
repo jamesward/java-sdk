@@ -81,7 +81,7 @@ public class McpAsyncServer {
 	 */
 	private final DefaultMcpSession mcpSession;
 
-	private final ServerMcpTransport transport;
+	private final ServerMcpTransport<McpSchema.JSONRPCMessage> transport;
 
 	private final McpSchema.ServerCapabilities serverCapabilities;
 
@@ -114,7 +114,7 @@ public class McpAsyncServer {
 	 * @param mcpTransport The transport layer implementation for MCP communication.
 	 * @param features The MCP server supported features.
 	 */
-	McpAsyncServer(ServerMcpTransport mcpTransport, McpServerFeatures.Async features) {
+	McpAsyncServer(ServerMcpTransport<McpSchema.JSONRPCMessage> mcpTransport, McpServerFeatures.Async features) {
 
 		this.serverInfo = features.serverInfo();
 		this.serverCapabilities = features.serverCapabilities();

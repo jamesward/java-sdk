@@ -217,7 +217,7 @@ public final class McpSchema {
 	public record InitializeRequest( // @formatter:off
 		@JsonProperty("protocolVersion") String protocolVersion,
 		@JsonProperty("capabilities") ClientCapabilities capabilities,
-		@JsonProperty("clientInfo") Implementation clientInfo) implements Request {		
+		@JsonProperty("clientInfo") Implementation clientInfo) implements Request {
 	} // @formatter:on
 
 	@JsonInclude(JsonInclude.Include.NON_ABSENT)
@@ -260,7 +260,7 @@ public final class McpSchema {
 		 * 		  has changed since the last time the server checked.
 		 */
 		@JsonInclude(JsonInclude.Include.NON_ABSENT)
-		@JsonIgnoreProperties(ignoreUnknown = true)	
+		@JsonIgnoreProperties(ignoreUnknown = true)
 		public record RootCapabilities(
 			@JsonProperty("listChanged") Boolean listChanged) {
 		}
@@ -275,7 +275,7 @@ public final class McpSchema {
 		 * image-based interactions and optionally include context
 		 * from MCP servers in their prompts.
 		 */
-		@JsonInclude(JsonInclude.Include.NON_ABSENT)			
+		@JsonInclude(JsonInclude.Include.NON_ABSENT)
 		public record Sampling() {
 		}
 
@@ -318,11 +318,11 @@ public final class McpSchema {
 		@JsonProperty("resources") ResourceCapabilities resources,
 		@JsonProperty("tools") ToolCapabilities tools) {
 
-			
+
 		@JsonInclude(JsonInclude.Include.NON_ABSENT)
 		public record LoggingCapabilities() {
 		}
-	
+
 		@JsonInclude(JsonInclude.Include.NON_ABSENT)
 		public record PromptCapabilities(
 			@JsonProperty("listChanged") Boolean listChanged) {
@@ -711,11 +711,11 @@ public final class McpSchema {
 		@JsonProperty("name") String name,
 		@JsonProperty("description") String description,
 		@JsonProperty("inputSchema") JsonSchema inputSchema) {
-	
+
 		public Tool(String name, String description, String schema) {
 			this(name, description, parseSchema(schema));
 		}
-			
+
 	} // @formatter:on
 
 	private static JsonSchema parseSchema(String schema) {
@@ -791,7 +791,7 @@ public final class McpSchema {
 		@JsonProperty("includeContext") ContextInclusionStrategy includeContext,
 		@JsonProperty("temperature") Double temperature,
 		@JsonProperty("maxTokens") int maxTokens,
-		@JsonProperty("stopSequences") List<String> stopSequences, 			
+		@JsonProperty("stopSequences") List<String> stopSequences,
 		@JsonProperty("metadata") Map<String, Object> metadata) implements Request {
 
 		public enum ContextInclusionStrategy {
@@ -808,7 +808,7 @@ public final class McpSchema {
 		@JsonProperty("content") Content content,
 		@JsonProperty("model") String model,
 		@JsonProperty("stopReason") StopReason stopReason) {
-		
+
 		public enum StopReason {
 			@JsonProperty("end_turn") END_TURN,
 			@JsonProperty("stop_sequence") STOP_SEQUENCE,
@@ -1068,4 +1068,5 @@ public final class McpSchema {
 		@JsonProperty("roots") List<Root> roots) {
 	} // @formatter:on
 
+	public record MessageWithSessionId(String sessionId, McpSchema.JSONRPCMessage message) {}
 }

@@ -8,6 +8,6 @@ package io.modelcontextprotocol.spec;
  *
  * @author Christian Tzolov
  */
-public interface ClientMcpTransport extends McpTransport {
+public interface ClientMcpTransport extends McpTransport<McpSchema.JSONRPCMessage> {
 
 }

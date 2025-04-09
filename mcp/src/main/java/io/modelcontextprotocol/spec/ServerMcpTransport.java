@@ -8,6 +8,6 @@ package io.modelcontextprotocol.spec;
  *
  * @author Christian Tzolov
  */
-public interface ServerMcpTransport extends McpTransport {
+public interface ServerMcpTransport<M> extends McpTransport<M> {
 
 }

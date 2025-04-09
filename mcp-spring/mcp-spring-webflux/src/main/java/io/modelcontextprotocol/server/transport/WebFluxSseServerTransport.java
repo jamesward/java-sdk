@@ -3,10 +3,12 @@ package io.modelcontextprotocol.server.transport;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.modelcontextprotocol.spec.McpError;
@@ -61,7 +63,7 @@ import org.springframework.web.reactive.function.server.ServerResponse;
  * @see ServerMcpTransport
  * @see ServerSentEvent
  */
-public class WebFluxSseServerTransport implements ServerMcpTransport {
+public class WebFluxSseServerTransport implements ServerMcpTransport<McpSchema.MessageWithSessionId> {
 
 	private static final Logger logger = LoggerFactory.getLogger(WebFluxSseServerTransport.class);
 
@@ -98,7 +100,7 @@ public class WebFluxSseServerTransport implements ServerMcpTransport {
 	 */
 	private volatile boolean isClosing = false;
 
-	private Function<Mono<McpSchema.JSONRPCMessage>, Mono<McpSchema.JSONRPCMessage>> connectHandler;
+	private Function<Mono<McpSchema.MessageWithSessionId>, Mono<McpSchema.MessageWithSessionId>> connectHandler;
 
 	/**
 	 * Constructs a new WebFlux SSE server transport instance.
@@ -148,67 +150,55 @@ public class WebFluxSseServerTransport implements ServerMcpTransport {
 	 * @return An empty Mono since the server doesn't initiate connections
 	 */
 	@Override
-	public Mono<Void> connect(Function<Mono<McpSchema.JSONRPCMessage>, Mono<McpSchema.JSONRPCMessage>> handler) {
+	public Mono<Void> connect(Function<Mono<McpSchema.MessageWithSessionId>, Mono<McpSchema.MessageWithSessionId>> handler) {
 		this.connectHandler = handler;
 		// Server-side transport doesn't initiate connections
 		return Mono.empty().then();
 	}
 
 	/**
-	 * Broadcasts a JSON-RPC message to all connected clients through their SSE
-	 * connections. The message is serialized to JSON and sent as a server-sent event to
-	 * each active session.
+	 * Broadcasts a JSON-RPC message to the session through their SSE
+	 * connections. The message is serialized to JSON and sent as a server-sent event.
 	 *
 	 * <p>
 	 * The method:
 	 * <ul>
 	 * <li>Serializes the message to JSON</li>
 	 * <li>Creates a server-sent event with the message data</li>
-	 * <li>Attempts to send the event to all active sessions</li>
-	 * <li>Tracks and reports any delivery failures</li>
 	 * </ul>
 	 * @param message The JSON-RPC message to broadcast
 	 * @return A Mono that completes when the message has been sent to all sessions, or
 	 * errors if any session fails to receive the message
 	 */
 	@Override
-	public Mono<Void> sendMessage(McpSchema.JSONRPCMessage message) {
-		if (sessions.isEmpty()) {
-			logger.debug("No active sessions to broadcast message to");
+	public Mono<Void> sendMessage(McpSchema.MessageWithSessionId message) {
+
+		ClientSession clientSession = sessions.get(message.sessionId());
+
+		if (clientSession == null) {
+			logger.debug("No session with the provided id");
 			return Mono.empty();
 		}
 
-		return Mono.<Void>create(sink -> {
-			try {// @formatter:off
-				String jsonText = objectMapper.writeValueAsString(message);
-				ServerSentEvent<Object> event = ServerSentEvent.builder()
+		try {
+			String jsonText = objectMapper.writeValueAsString(message.message());
+			ServerSentEvent<Object> event = ServerSentEvent.builder()
 					.event(MESSAGE_EVENT_TYPE)
 					.data(jsonText)
 					.build();
 
-				logger.debug("Attempting to broadcast message to {} active sessions", sessions.size());
+			logger.debug("Attempting to broadcast message to session");
 
-				List<String> failedSessions = sessions.values().stream()
-					.filter(session -> session.messageSink.tryEmitNext(event).isFailure())
-					.map(session -> session.id)
-					.toList();
-
-				if (failedSessions.isEmpty()) {
-					logger.debug("Successfully broadcast message to all sessions");
-					sink.success();
-				}
-				else {
-					String error = "Failed to broadcast message to sessions: " + String.join(", ", failedSessions);
-					logger.error(error);
-					sink.error(new RuntimeException(error));
-				} // @formatter:on
+			if (clientSession.messageSink.tryEmitNext(event).isSuccess()) {
+				return Mono.empty();
 			}
-			catch (IOException e) {
-				logger.error("Failed to serialize message: {}", e.getMessage());
-				sink.error(e);
+			else {
+				return Mono.error(new RuntimeException("Could not send message"));
 			}
-		});
-	}
+		} catch (JsonProcessingException e) {
+			return Mono.error(e);
+        }
+    }
 
 	/**
 	 * Converts data from one type to another using the configured ObjectMapper. This
@@ -301,7 +291,7 @@ public class WebFluxSseServerTransport implements ServerMcpTransport {
 			.body(Flux.<ServerSentEvent<?>>create(sink -> {
 				// Send initial endpoint event
 				logger.debug("Sending initial endpoint event to session: {}", sessionId);
-				sink.next(ServerSentEvent.builder().event(ENDPOINT_EVENT_TYPE).data(messageEndpoint).build());
+				sink.next(ServerSentEvent.builder().event(ENDPOINT_EVENT_TYPE).data(messageEndpoint + "?sessionId=" + sessionId).build());
 
 				// Subscribe to session messages
 				session.messageSink.asFlux()
@@ -350,23 +340,34 @@ public class WebFluxSseServerTransport implements ServerMcpTransport {
 			return ServerResponse.status(HttpStatus.SERVICE_UNAVAILABLE).bodyValue("Server is shutting down");
 		}
 
-		return request.bodyToMono(String.class).flatMap(body -> {
-			try {
-				McpSchema.JSONRPCMessage message = McpSchema.deserializeJsonRpcMessage(objectMapper, body);
-				return Mono.just(message)
-					.transform(this.connectHandler)
-					.flatMap(response -> ServerResponse.ok().build())
-					.onErrorResume(error -> {
-						logger.error("Error processing message: {}", error.getMessage());
-						return ServerResponse.status(HttpStatus.INTERNAL_SERVER_ERROR)
-							.bodyValue(new McpError(error.getMessage()));
-					});
-			}
-			catch (IllegalArgumentException | IOException e) {
-				logger.error("Failed to deserialize message: {}", e.getMessage());
-				return ServerResponse.badRequest().bodyValue(new McpError("Invalid message format"));
-			}
-		});
+		System.out.println("getting sessionId");
+
+		Optional<String> maybeSessionId = request.queryParam("sessionId");
+		System.out.println(maybeSessionId);
+		System.out.println(request.path());
+
+		return maybeSessionId
+				.map(sessionId ->
+						request.bodyToMono(String.class).flatMap(body -> {
+							try {
+								McpSchema.JSONRPCMessage message = McpSchema.deserializeJsonRpcMessage(objectMapper, body);
+
+								return Mono.just(new McpSchema.MessageWithSessionId(sessionId, message))
+										.transform(this.connectHandler)
+										.flatMap(response -> ServerResponse.ok().build())
+										.onErrorResume(error -> {
+											logger.error("Error processing message: {}", error.getMessage());
+											return ServerResponse.status(HttpStatus.INTERNAL_SERVER_ERROR)
+													.bodyValue(new McpError(error.getMessage()));
+										});
+							}
+							catch (IllegalArgumentException | IOException e) {
+								logger.error("Failed to deserialize message: {}", e.getMessage());
+								return ServerResponse.badRequest().bodyValue(new McpError("Invalid message format"));
+							}
+						})
+				)
+				.orElse(ServerResponse.badRequest().bodyValue(new McpError("Invalid sessionId")));
 	}
 
 	/**

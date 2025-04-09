@@ -23,7 +23,7 @@ import reactor.core.publisher.Sinks;
  * A mock implementation of the {@link ClientMcpTransport} and {@link ServerMcpTransport}
  * interfaces.
  */
-public class MockMcpTransport implements ClientMcpTransport, ServerMcpTransport {
+public class MockMcpTransport implements ClientMcpTransport, ServerMcpTransport<McpSchema.JSONRPCMessage> {
 
 	private final Sinks.Many<McpSchema.JSONRPCMessage> inbound = Sinks.many().unicast().onBackpressureBuffer();
 

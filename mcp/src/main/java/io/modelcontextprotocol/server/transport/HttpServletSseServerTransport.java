@@ -7,6 +7,7 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -56,7 +57,7 @@ import reactor.core.publisher.Mono;
  */
 
 @WebServlet(asyncSupported = true)
-public class HttpServletSseServerTransport extends HttpServlet implements ServerMcpTransport {
+public class HttpServletSseServerTransport extends HttpServlet implements ServerMcpTransport<McpSchema.MessageWithSessionId> {
 
 	/** Logger for this class */
 	private static final Logger logger = LoggerFactory.getLogger(HttpServletSseServerTransport.class);
@@ -92,7 +93,7 @@ public class HttpServletSseServerTransport extends HttpServlet implements Server
 	private final AtomicBoolean isClosing = new AtomicBoolean(false);
 
 	/** Handler for processing incoming messages */
-	private Function<Mono<McpSchema.JSONRPCMessage>, Mono<McpSchema.JSONRPCMessage>> connectHandler;
+	private Function<Mono<McpSchema.MessageWithSessionId>, Mono<McpSchema.MessageWithSessionId>> connectHandler;
 
 	/**
 	 * Creates a new HttpServletSseServerTransport instance with a custom SSE endpoint.
@@ -187,79 +188,82 @@ public class HttpServletSseServerTransport extends HttpServlet implements Server
 			return;
 		}
 
-		try {
-			BufferedReader reader = request.getReader();
-			StringBuilder body = new StringBuilder();
-			String line;
-			while ((line = reader.readLine()) != null) {
-				body.append(line);
-			}
+		String sessionId = request.getParameter("sessionId");
 
-			McpSchema.JSONRPCMessage message = McpSchema.deserializeJsonRpcMessage(objectMapper, body.toString());
-
-			if (connectHandler != null) {
-				connectHandler.apply(Mono.just(message)).subscribe(responseMessage -> {
-					try {
-						response.setContentType(APPLICATION_JSON);
-						response.setCharacterEncoding(UTF_8);
-						String jsonResponse = objectMapper.writeValueAsString(responseMessage);
-						PrintWriter writer = response.getWriter();
-						writer.write(jsonResponse);
-						writer.flush();
-					}
-					catch (Exception e) {
-						logger.error("Error sending response: {}", e.getMessage());
-						try {
-							response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR,
-									"Error processing response: " + e.getMessage());
-						}
-						catch (IOException ex) {
-							logger.error(FAILED_TO_SEND_ERROR_RESPONSE, ex.getMessage());
-						}
-					}
-				}, error -> {
-					try {
-						logger.error("Error processing message: {}", error.getMessage());
-						McpError mcpError = new McpError(error.getMessage());
-						response.setContentType(APPLICATION_JSON);
-						response.setCharacterEncoding(UTF_8);
-						response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
-						String jsonError = objectMapper.writeValueAsString(mcpError);
-						PrintWriter writer = response.getWriter();
-						writer.write(jsonError);
-						writer.flush();
-					}
-					catch (IOException e) {
-						logger.error(FAILED_TO_SEND_ERROR_RESPONSE, e.getMessage());
-						try {
-							response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR,
-									"Error sending error response: " + e.getMessage());
-						}
-						catch (IOException ex) {
-							logger.error(FAILED_TO_SEND_ERROR_RESPONSE, ex.getMessage());
-						}
-					}
-				});
-			}
-			else {
-				response.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE, "No message handler configured");
-			}
+		if (sessionId == null) {
+			logger.error(FAILED_TO_SEND_ERROR_RESPONSE, "Could not find sessionId");
+			response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Could not find sessionId");
 		}
-		catch (Exception e) {
-			logger.error("Invalid message format: {}", e.getMessage());
+		else {
 			try {
-				McpError mcpError = new McpError("Invalid message format: " + e.getMessage());
-				response.setContentType(APPLICATION_JSON);
-				response.setCharacterEncoding(UTF_8);
-				response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
-				String jsonError = objectMapper.writeValueAsString(mcpError);
-				PrintWriter writer = response.getWriter();
-				writer.write(jsonError);
-				writer.flush();
-			}
-			catch (IOException ex) {
-				logger.error(FAILED_TO_SEND_ERROR_RESPONSE, ex.getMessage());
-				response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Invalid message format");
+				BufferedReader reader = request.getReader();
+				StringBuilder body = new StringBuilder();
+				String line;
+				while ((line = reader.readLine()) != null) {
+					body.append(line);
+				}
+
+				McpSchema.JSONRPCMessage message = McpSchema.deserializeJsonRpcMessage(objectMapper, body.toString());
+
+				McpSchema.MessageWithSessionId messageWithSessionId = new McpSchema.MessageWithSessionId(sessionId, message);
+
+				if (connectHandler != null) {
+					connectHandler.apply(Mono.just(messageWithSessionId)).subscribe(responseMessage -> {
+						try {
+							response.setContentType(APPLICATION_JSON);
+							response.setCharacterEncoding(UTF_8);
+							String jsonResponse = objectMapper.writeValueAsString(responseMessage);
+							PrintWriter writer = response.getWriter();
+							writer.write(jsonResponse);
+							writer.flush();
+						} catch (Exception e) {
+							logger.error("Error sending response: {}", e.getMessage());
+							try {
+								response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR,
+										"Error processing response: " + e.getMessage());
+							} catch (IOException ex) {
+								logger.error(FAILED_TO_SEND_ERROR_RESPONSE, ex.getMessage());
+							}
+						}
+					}, error -> {
+						try {
+							logger.error("Error processing message: {}", error.getMessage());
+							McpError mcpError = new McpError(error.getMessage());
+							response.setContentType(APPLICATION_JSON);
+							response.setCharacterEncoding(UTF_8);
+							response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+							String jsonError = objectMapper.writeValueAsString(mcpError);
+							PrintWriter writer = response.getWriter();
+							writer.write(jsonError);
+							writer.flush();
+						} catch (IOException e) {
+							logger.error(FAILED_TO_SEND_ERROR_RESPONSE, e.getMessage());
+							try {
+								response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR,
+										"Error sending error response: " + e.getMessage());
+							} catch (IOException ex) {
+								logger.error(FAILED_TO_SEND_ERROR_RESPONSE, ex.getMessage());
+							}
+						}
+					});
+				} else {
+					response.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE, "No message handler configured");
+				}
+			} catch (Exception e) {
+				logger.error("Invalid message format: {}", e.getMessage());
+				try {
+					McpError mcpError = new McpError("Invalid message format: " + e.getMessage());
+					response.setContentType(APPLICATION_JSON);
+					response.setCharacterEncoding(UTF_8);
+					response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+					String jsonError = objectMapper.writeValueAsString(mcpError);
+					PrintWriter writer = response.getWriter();
+					writer.write(jsonError);
+					writer.flush();
+				} catch (IOException ex) {
+					logger.error(FAILED_TO_SEND_ERROR_RESPONSE, ex.getMessage());
+					response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Invalid message format");
+				}
 			}
 		}
 	}
@@ -270,7 +274,7 @@ public class HttpServletSseServerTransport extends HttpServlet implements Server
 	 * @return A Mono that completes when the handler is set up
 	 */
 	@Override
-	public Mono<Void> connect(Function<Mono<McpSchema.JSONRPCMessage>, Mono<McpSchema.JSONRPCMessage>> handler) {
+	public Mono<Void> connect(Function<Mono<McpSchema.MessageWithSessionId>, Mono<McpSchema.MessageWithSessionId>> handler) {
 		this.connectHandler = handler;
 		return Mono.empty();
 	}
@@ -284,7 +288,7 @@ public class HttpServletSseServerTransport extends HttpServlet implements Server
 	 * @return A Mono that completes when the message has been sent to all clients
 	 */
 	@Override
-	public Mono<Void> sendMessage(McpSchema.JSONRPCMessage message) {
+	public Mono<Void> sendMessage(McpSchema.MessageWithSessionId message) {
 		if (sessions.isEmpty()) {
 			logger.debug("No active sessions to broadcast message to");
 			return Mono.empty();
@@ -292,7 +296,7 @@ public class HttpServletSseServerTransport extends HttpServlet implements Server
 
 		return Mono.create(sink -> {
 			try {
-				String jsonText = objectMapper.writeValueAsString(message);
+				String jsonText = objectMapper.writeValueAsString(message.message());
 
 				sessions.values().forEach(session -> {
 					try {

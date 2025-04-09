@@ -6,6 +6,7 @@ package io.modelcontextprotocol.server.transport;
 
 import java.io.IOException;
 import java.time.Duration;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
@@ -63,7 +64,7 @@ import org.springframework.web.servlet.function.ServerResponse.SseBuilder;
  * @see ServerMcpTransport
  * @see RouterFunction
  */
-public class WebMvcSseServerTransport implements ServerMcpTransport {
+public class WebMvcSseServerTransport implements ServerMcpTransport<McpSchema.MessageWithSessionId> {
 
 	private static final Logger logger = LoggerFactory.getLogger(WebMvcSseServerTransport.class);
 
@@ -103,7 +104,7 @@ public class WebMvcSseServerTransport implements ServerMcpTransport {
 	/**
 	 * The function to process incoming JSON-RPC messages and produce responses.
 	 */
-	private Function<Mono<McpSchema.JSONRPCMessage>, Mono<McpSchema.JSONRPCMessage>> connectHandler;
+	private Function<Mono<McpSchema.MessageWithSessionId>, Mono<McpSchema.MessageWithSessionId>> connectHandler;
 
 	/**
 	 * Constructs a new WebMvcSseServerTransport instance.
@@ -151,41 +152,41 @@ public class WebMvcSseServerTransport implements ServerMcpTransport {
 	 */
 	@Override
 	public Mono<Void> connect(
-			Function<Mono<McpSchema.JSONRPCMessage>, Mono<McpSchema.JSONRPCMessage>> connectionHandler) {
+			Function<Mono<McpSchema.MessageWithSessionId>, Mono<McpSchema.MessageWithSessionId>> connectionHandler) {
 		this.connectHandler = connectionHandler;
 		// Server-side transport doesn't initiate connections
 		return Mono.empty();
 	}
 
 	/**
-	 * Broadcasts a message to all connected clients through their SSE connections. The
+	 * Broadcasts a message to the session through the SSE connections. The
 	 * message is serialized to JSON and sent as an SSE event with type "message". If any
 	 * errors occur during sending to a particular client, they are logged but don't
 	 * prevent sending to other clients.
-	 * @param message The JSON-RPC message to broadcast to all connected clients
+	 * @param message The JSON-RPC message to broadcast to the client
 	 * @return A Mono that completes when the broadcast attempt is finished
 	 */
 	@Override
-	public Mono<Void> sendMessage(McpSchema.JSONRPCMessage message) {
+	public Mono<Void> sendMessage(McpSchema.MessageWithSessionId message) {
 		return Mono.fromRunnable(() -> {
-			if (sessions.isEmpty()) {
-				logger.debug("No active sessions to broadcast message to");
+			ClientSession clientSession = sessions.get(message.sessionId());
+
+			if (clientSession == null) {
+				logger.debug("No session found");
 				return;
 			}
 
 			try {
-				String jsonText = objectMapper.writeValueAsString(message);
+				String jsonText = objectMapper.writeValueAsString(message.message());
 				logger.debug("Attempting to broadcast message to {} active sessions", sessions.size());
 
-				sessions.values().forEach(session -> {
-					try {
-						session.sseBuilder.id(session.id).event(MESSAGE_EVENT_TYPE).data(jsonText);
-					}
-					catch (Exception e) {
-						logger.error("Failed to send message to session {}: {}", session.id, e.getMessage());
-						session.sseBuilder.error(e);
-					}
-				});
+				try {
+					clientSession.sseBuilder.id(message.sessionId()).event(MESSAGE_EVENT_TYPE).data(jsonText);
+				}
+				catch (Exception e) {
+					logger.error("Failed to send message to session {}: {}", message.sessionId(), e.getMessage());
+					clientSession.sseBuilder.error(e);
+				}
 			}
 			catch (IOException e) {
 				logger.error("Failed to serialize message: {}", e.getMessage());
@@ -231,7 +232,7 @@ public class WebMvcSseServerTransport implements ServerMcpTransport {
 				this.sessions.put(sessionId, session);
 
 				try {
-					session.sseBuilder.id(session.id).event(ENDPOINT_EVENT_TYPE).data(messageEndpoint);
+					session.sseBuilder.id(session.id).event(ENDPOINT_EVENT_TYPE).data(messageEndpoint + "?sessionId=" + sessionId);
 				}
 				catch (Exception e) {
 					logger.error("Failed to poll event from session queue: {}", e.getMessage());
@@ -262,25 +263,31 @@ public class WebMvcSseServerTransport implements ServerMcpTransport {
 			return ServerResponse.status(HttpStatus.SERVICE_UNAVAILABLE).body("Server is shutting down");
 		}
 
-		try {
-			String body = request.body(String.class);
-			McpSchema.JSONRPCMessage message = McpSchema.deserializeJsonRpcMessage(objectMapper, body);
+		Optional<String> maybeSessionId = request.param("sessionId");
 
-			// Convert the message to a Mono, apply the handler, and block for the
-			// response
-			@SuppressWarnings("unused")
-			McpSchema.JSONRPCMessage response = Mono.just(message).transform(connectHandler).block();
+		return maybeSessionId.map( sessionId -> {
+							try {
+								String body = request.body(String.class);
+								McpSchema.JSONRPCMessage message = McpSchema.deserializeJsonRpcMessage(objectMapper, body);
 
-			return ServerResponse.ok().build();
-		}
-		catch (IllegalArgumentException | IOException e) {
-			logger.error("Failed to deserialize message: {}", e.getMessage());
-			return ServerResponse.badRequest().body(new McpError("Invalid message format"));
-		}
-		catch (Exception e) {
-			logger.error("Error handling message: {}", e.getMessage());
-			return ServerResponse.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new McpError(e.getMessage()));
-		}
+								McpSchema.MessageWithSessionId messageWithSessionId = new McpSchema.MessageWithSessionId(sessionId, message);
+
+								// Convert the message to a Mono, apply the handler, and block for the
+								// response
+								@SuppressWarnings("unused")
+								McpSchema.MessageWithSessionId response = Mono.just(messageWithSessionId).transform(connectHandler).block();
+
+								return ServerResponse.ok().build();
+							} catch (IllegalArgumentException | IOException e) {
+								logger.error("Failed to deserialize message: {}", e.getMessage());
+								return ServerResponse.badRequest().body(new McpError("Invalid message format"));
+							} catch (Exception e) {
+								logger.error("Error handling message: {}", e.getMessage());
+								return ServerResponse.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new McpError(e.getMessage()));
+							}
+						}
+				)
+				.orElse(ServerResponse.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new McpError("Could not get sessionId")));
 	}
 
 	/**

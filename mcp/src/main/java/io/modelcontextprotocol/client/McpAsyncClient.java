@@ -138,7 +138,7 @@ public class McpAsyncClient {
 	/**
 	 * Client transport implementation.
 	 */
-	private final McpTransport transport;
+	private final McpTransport<McpSchema.JSONRPCMessage> transport;
 
 	/**
 	 * Supported protocol versions.

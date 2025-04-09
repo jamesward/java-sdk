@@ -34,7 +34,7 @@ import reactor.core.scheduler.Schedulers;
  *
  * @author Christian Tzolov
  */
-public class StdioServerTransport implements ServerMcpTransport {
+public class StdioServerTransport implements ServerMcpTransport<McpSchema.JSONRPCMessage> {
 
 	private static final Logger logger = LoggerFactory.getLogger(StdioServerTransport.class);
 

@@ -37,7 +37,7 @@ import reactor.core.publisher.Mono;
  * @author Christian Tzolov
  * @author Dariusz Jędrzejczyk
  */
-public interface McpTransport {
+public interface McpTransport<M> {
 
 	/**
 	 * Initializes and starts the transport connection.
@@ -47,7 +47,7 @@ public interface McpTransport {
 	 * necessary resources and establishes the connection to the server.
 	 * </p>
 	 */
-	Mono<Void> connect(Function<Mono<JSONRPCMessage>, Mono<JSONRPCMessage>> handler);
+	Mono<Void> connect(Function<Mono<M>, Mono<M>> handler);
 
 	/**
 	 * Closes the transport connection and releases any associated resources.
@@ -78,7 +78,7 @@ public interface McpTransport {
 	 * @param message the {@link JSONRPCMessage} to be sent to the server
 	 * @return a {@link Mono<Void>} that completes when the message has been sent
 	 */
-	Mono<Void> sendMessage(JSONRPCMessage message);
+	Mono<Void> sendMessage(M message);
 
 	/**
 	 * Unmarshals the given data into an object of the specified type.
