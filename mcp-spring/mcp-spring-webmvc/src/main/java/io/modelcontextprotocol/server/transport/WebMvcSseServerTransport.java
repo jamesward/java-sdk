@@ -159,10 +159,10 @@ public class WebMvcSseServerTransport implements ServerMcpTransport<McpSchema.Me
 	}
 
 	/**
-	 * Broadcasts a message to the session through the SSE connections. The
-	 * message is serialized to JSON and sent as an SSE event with type "message". If any
-	 * errors occur during sending to a particular client, they are logged but don't
-	 * prevent sending to other clients.
+	 * Broadcasts a message to the session through the SSE connections. The message is
+	 * serialized to JSON and sent as an SSE event with type "message". If any errors
+	 * occur during sending to a particular client, they are logged but don't prevent
+	 * sending to other clients.
 	 * @param message The JSON-RPC message to broadcast to the client
 	 * @return A Mono that completes when the broadcast attempt is finished
 	 */
@@ -232,7 +232,9 @@ public class WebMvcSseServerTransport implements ServerMcpTransport<McpSchema.Me
 				this.sessions.put(sessionId, session);
 
 				try {
-					session.sseBuilder.id(session.id).event(ENDPOINT_EVENT_TYPE).data(messageEndpoint + "?sessionId=" + sessionId);
+					session.sseBuilder.id(session.id)
+						.event(ENDPOINT_EVENT_TYPE)
+						.data(messageEndpoint + "?sessionId=" + sessionId);
 				}
 				catch (Exception e) {
 					logger.error("Failed to poll event from session queue: {}", e.getMessage());
@@ -265,29 +267,34 @@ public class WebMvcSseServerTransport implements ServerMcpTransport<McpSchema.Me
 
 		Optional<String> maybeSessionId = request.param("sessionId");
 
-		return maybeSessionId.map( sessionId -> {
-							try {
-								String body = request.body(String.class);
-								McpSchema.JSONRPCMessage message = McpSchema.deserializeJsonRpcMessage(objectMapper, body);
+		return maybeSessionId.map(sessionId -> {
+			try {
+				String body = request.body(String.class);
+				McpSchema.JSONRPCMessage message = McpSchema.deserializeJsonRpcMessage(objectMapper, body);
 
-								McpSchema.MessageWithSessionId messageWithSessionId = new McpSchema.MessageWithSessionId(sessionId, message);
+				McpSchema.MessageWithSessionId messageWithSessionId = new McpSchema.MessageWithSessionId(sessionId,
+						message);
 
-								// Convert the message to a Mono, apply the handler, and block for the
-								// response
-								@SuppressWarnings("unused")
-								McpSchema.MessageWithSessionId response = Mono.just(messageWithSessionId).transform(connectHandler).block();
+				// Convert the message to a Mono, apply the handler, and block for the
+				// response
+				@SuppressWarnings("unused")
+				McpSchema.MessageWithSessionId response = Mono.just(messageWithSessionId)
+					.transform(connectHandler)
+					.block();
 
-								return ServerResponse.ok().build();
-							} catch (IllegalArgumentException | IOException e) {
-								logger.error("Failed to deserialize message: {}", e.getMessage());
-								return ServerResponse.badRequest().body(new McpError("Invalid message format"));
-							} catch (Exception e) {
-								logger.error("Error handling message: {}", e.getMessage());
-								return ServerResponse.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new McpError(e.getMessage()));
-							}
-						}
-				)
-				.orElse(ServerResponse.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new McpError("Could not get sessionId")));
+				return ServerResponse.ok().build();
+			}
+			catch (IllegalArgumentException | IOException e) {
+				logger.error("Failed to deserialize message: {}", e.getMessage());
+				return ServerResponse.badRequest().body(new McpError("Invalid message format"));
+			}
+			catch (Exception e) {
+				logger.error("Error handling message: {}", e.getMessage());
+				return ServerResponse.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new McpError(e.getMessage()));
+			}
+		})
+			.orElse(ServerResponse.status(HttpStatus.INTERNAL_SERVER_ERROR)
+				.body(new McpError("Could not get sessionId")));
 	}
 
 	/**

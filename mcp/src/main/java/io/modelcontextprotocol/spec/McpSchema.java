@@ -1068,5 +1068,7 @@ public final class McpSchema {
 		@JsonProperty("roots") List<Root> roots) {
 	} // @formatter:on
 
-	public record MessageWithSessionId(String sessionId, McpSchema.JSONRPCMessage message) {}
+	public record MessageWithSessionId(String sessionId, McpSchema.JSONRPCMessage message) {
+	}
+
 }

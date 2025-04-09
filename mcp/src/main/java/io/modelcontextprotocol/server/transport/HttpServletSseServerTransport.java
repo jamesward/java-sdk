@@ -57,7 +57,8 @@ import reactor.core.publisher.Mono;
  */
 
 @WebServlet(asyncSupported = true)
-public class HttpServletSseServerTransport extends HttpServlet implements ServerMcpTransport<McpSchema.MessageWithSessionId> {
+public class HttpServletSseServerTransport extends HttpServlet
+		implements ServerMcpTransport<McpSchema.MessageWithSessionId> {
 
 	/** Logger for this class */
 	private static final Logger logger = LoggerFactory.getLogger(HttpServletSseServerTransport.class);
@@ -205,7 +206,8 @@ public class HttpServletSseServerTransport extends HttpServlet implements Server
 
 				McpSchema.JSONRPCMessage message = McpSchema.deserializeJsonRpcMessage(objectMapper, body.toString());
 
-				McpSchema.MessageWithSessionId messageWithSessionId = new McpSchema.MessageWithSessionId(sessionId, message);
+				McpSchema.MessageWithSessionId messageWithSessionId = new McpSchema.MessageWithSessionId(sessionId,
+						message);
 
 				if (connectHandler != null) {
 					connectHandler.apply(Mono.just(messageWithSessionId)).subscribe(responseMessage -> {
@@ -216,12 +218,14 @@ public class HttpServletSseServerTransport extends HttpServlet implements Server
 							PrintWriter writer = response.getWriter();
 							writer.write(jsonResponse);
 							writer.flush();
-						} catch (Exception e) {
+						}
+						catch (Exception e) {
 							logger.error("Error sending response: {}", e.getMessage());
 							try {
 								response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR,
 										"Error processing response: " + e.getMessage());
-							} catch (IOException ex) {
+							}
+							catch (IOException ex) {
 								logger.error(FAILED_TO_SEND_ERROR_RESPONSE, ex.getMessage());
 							}
 						}
@@ -236,20 +240,24 @@ public class HttpServletSseServerTransport extends HttpServlet implements Server
 							PrintWriter writer = response.getWriter();
 							writer.write(jsonError);
 							writer.flush();
-						} catch (IOException e) {
+						}
+						catch (IOException e) {
 							logger.error(FAILED_TO_SEND_ERROR_RESPONSE, e.getMessage());
 							try {
 								response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR,
 										"Error sending error response: " + e.getMessage());
-							} catch (IOException ex) {
+							}
+							catch (IOException ex) {
 								logger.error(FAILED_TO_SEND_ERROR_RESPONSE, ex.getMessage());
 							}
 						}
 					});
-				} else {
+				}
+				else {
 					response.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE, "No message handler configured");
 				}
-			} catch (Exception e) {
+			}
+			catch (Exception e) {
 				logger.error("Invalid message format: {}", e.getMessage());
 				try {
 					McpError mcpError = new McpError("Invalid message format: " + e.getMessage());
@@ -260,7 +268,8 @@ public class HttpServletSseServerTransport extends HttpServlet implements Server
 					PrintWriter writer = response.getWriter();
 					writer.write(jsonError);
 					writer.flush();
-				} catch (IOException ex) {
+				}
+				catch (IOException ex) {
 					logger.error(FAILED_TO_SEND_ERROR_RESPONSE, ex.getMessage());
 					response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Invalid message format");
 				}
@@ -274,7 +283,8 @@ public class HttpServletSseServerTransport extends HttpServlet implements Server
 	 * @return A Mono that completes when the handler is set up
 	 */
 	@Override
-	public Mono<Void> connect(Function<Mono<McpSchema.MessageWithSessionId>, Mono<McpSchema.MessageWithSessionId>> handler) {
+	public Mono<Void> connect(
+			Function<Mono<McpSchema.MessageWithSessionId>, Mono<McpSchema.MessageWithSessionId>> handler) {
 		this.connectHandler = handler;
 		return Mono.empty();
 	}
